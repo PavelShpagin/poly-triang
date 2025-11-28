@@ -33,9 +33,9 @@ The algorithm consists of three phases:
     \item \textbf{Monotone Triangulation}: Triangulate the resulting monotone sub-polygons ($O(n)$).
 \end{enumerate}
 
-\section{Detailed Step: Searching for Neighbors in $O(\log r)$}
+\section{Detailed Step: Sweep-Line Maintenance and Search}
 
-The core of the algorithm is Phase 2, where we must efficiently find the visible chains to the left and right of a reflex vertex $v$.
+The core of the algorithm is Phase 2, where we efficiently find visible chains using a sweep-line approach.
 
 \subsection{The Status Structure $\mathcal{T}$}
 We maintain a balanced Binary Search Tree (BST), denoted as $\mathcal{T}$, which stores the currently \emph{active monotone chains} intersecting the sweep line $L$.
@@ -44,14 +44,40 @@ We maintain a balanced Binary Search Tree (BST), denoted as $\mathcal{T}$, which
     \item \textbf{Invariant}: Although the $x$-coordinates of the chains change continuously as $L$ moves vertically, the \emph{relative left-to-right order} of non-intersecting monotone chains remains unchanged between event points. This allows us to use a standard BST.
 \end{itemize}
 
-\subsection{Processing a Reflex Vertex $v$}
-When the sweep line reaches a reflex vertex $v$:
+\subsection{Tree Maintenance and Event Processing}
+The sweep line moves from top to bottom (decreasing $y$). We define three types of events based on the Monotone Chain Decomposition:
+
 \begin{enumerate}
-    \item We search $\mathcal{T}$ using $v$'s $x$-coordinate as the key.
-    \item Since the relative order is invariant, we can perform a binary search in $O(\log k)$ time, where $k$ is the number of active chains ($k \le O(r)$).
-    \item **Find Left Neighbor ($C_{left}$)**: The predecessor of $v$ in $\mathcal{T}$. This is the chain immediately to the left of $v$.
-    \item **Find Right Neighbor ($C_{right}$)**: The successor of $v$ in $\mathcal{T}$. This is the chain immediately to the right of $v$.
-    \item **Add Diagonal**: We connect $v$ to a "helper" vertex stored with $C_{left}$ or $C_{right}$ to resolve the reflex angle.
+    \item \textbf{Chain Start (Peak)}:
+    \begin{itemize}
+        \item Occurs at the upper endpoint of a monotone chain.
+        \item \textbf{Action}: Insert the new chain into $\mathcal{T}$.
+        \item \textbf{Complexity}: $O(\log k)$ to find the correct position and insert, where $k \le O(r)$ is the number of active chains.
+    \end{itemize}
+
+    \item \textbf{Chain End (Valley)}:
+    \begin{itemize}
+        \item Occurs at the lower endpoint of a monotone chain.
+        \item \textbf{Action}: Remove the chain from $\mathcal{T}$.
+        \item \textbf{Complexity}: $O(\log k)$ to locate and delete the node.
+    \end{itemize}
+
+    \item \textbf{Reflex Vertex Search}:
+    \begin{itemize}
+        \item Occurs at a reflex vertex $v$ lying on some active chain.
+        \item \textbf{Action}: Search $\mathcal{T}$ using $v$'s $x$-coordinate to find the closest chains to the left ($C_{left}$) and right ($C_{right}$).
+        \item \textbf{Note}: This does not alter the structure of $\mathcal{T}$ (unless $v$ is also a peak/valley), but uses it to find visibility.
+        \item \textbf{Complexity}: $O(\log k)$ query time.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Processing Logic}
+When processing a reflex vertex $v$:
+\begin{enumerate}
+    \item We perform a binary search in $\mathcal{T}$ using $v$'s current $x$-coordinate.
+    \item \textbf{Find Left Neighbor ($C_{left}$)}: The predecessor of $v$ in $\mathcal{T}$. This is the chain immediately to the left of $v$ at the current scan line.
+    \item \textbf{Find Right Neighbor ($C_{right}$)}: The successor of $v$ in $\mathcal{T}$.
+    \item \textbf{Add Diagonal}: We connect $v$ to a "helper" vertex stored with $C_{left}$ or $C_{right}$ to resolve the reflex angle.
 \end{enumerate}
 
 \subsection{Comparison Logic}
