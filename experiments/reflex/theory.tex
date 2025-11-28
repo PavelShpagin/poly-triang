@@ -52,14 +52,14 @@ The sweep line moves from top to bottom (decreasing $y$). We define three types 
     \begin{itemize}
         \item Occurs at the upper endpoint of a monotone chain.
         \item \textbf{Action}: Insert the new chain into $\mathcal{T}$.
-        \item \textbf{Complexity}: $O(\log k)$ to find the correct position and insert, where $k \le O(r)$ is the number of active chains.
+        \item \textbf{Complexity}: $O(\log k)$ where $k$ is the number of active chains. Since every chain starts at a peak (which is a reflex vertex or local maximum), the total number of chains is bounded by $O(r)$. Thus, insertion is $O(\log r)$.
     \end{itemize}
 
     \item \textbf{Chain End (Valley)}:
     \begin{itemize}
         \item Occurs at the lower endpoint of a monotone chain.
         \item \textbf{Action}: Remove the chain from $\mathcal{T}$.
-        \item \textbf{Complexity}: $O(\log k)$ to locate and delete the node.
+        \item \textbf{Complexity}: $O(\log k) = O(\log r)$. Deletion in a balanced BST depends only on the tree height, which is logarithmic with respect to the number of nodes (chains).
     \end{itemize}
 
     \item \textbf{Reflex Vertex Search}:
@@ -88,6 +88,16 @@ To insert a chain or search for a point in $\mathcal{T}$, we define a comparison
     \item Return $x_A < x_B$.
 \end{itemize}
 This dynamic comparison is valid because the chains are monotonic and do not cross.
+
+\section{Optimality of the Approach}
+
+Is it possible to achieve $O(n + r \log r)$ using the concept of "Reflex Chords"? \textbf{Yes.} The Monotone Chain Sweep algorithm described above is precisely the formalization of that idea. 
+
+By decomposing the polygon into monotone chains (linear time), we ensure that the only "difficult" operations (searching for visibility) occur exactly at the $r$ reflex vertices. The plane sweep structure ensures each search takes only $O(\log r)$ time. 
+
+This is asymptotically optimal for output-sensitive triangulation because sorting the $r$ reflex vertices (implicitly done by the priority queue or initial sort) requires $\Omega(r \log r)$. The $O(n)$ term accounts for reading the input and traversing the simple chains.
+
+Thus, this method is "mega fast" (linear) for convex polygons ($r=0$) and scales gracefully with complexity, never exceeding $O(n \log n)$.
 
 \section{Practical Implementation: Spatial Hashing}
 
