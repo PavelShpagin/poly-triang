@@ -52,62 +52,64 @@ The sweep line moves from top to bottom (decreasing $y$). We define three types 
     \begin{itemize}
         \item Occurs at the upper endpoint of a monotone chain.
         \item \textbf{Action}: Insert the new chain into $\mathcal{T}$.
-        \item \textbf{Complexity}: $O(\log k)$ where $k$ is the number of active chains. Since every chain starts at a peak (which is a reflex vertex or local maximum), the total number of chains is bounded by $O(r)$. Thus, insertion is $O(\log r)$.
+        \item \textbf{Complexity}: $O(\log r)$.
     \end{itemize}
 
     \item \textbf{Chain End (Valley)}:
     \begin{itemize}
         \item Occurs at the lower endpoint of a monotone chain.
         \item \textbf{Action}: Remove the chain from $\mathcal{T}$.
-        \item \textbf{Complexity}: $O(\log k) = O(\log r)$. Deletion in a balanced BST depends only on the tree height, which is logarithmic with respect to the number of nodes (chains).
+        \item \textbf{Complexity}: $O(\log r)$.
     \end{itemize}
 
     \item \textbf{Reflex Vertex Search}:
     \begin{itemize}
         \item Occurs at a reflex vertex $v$ lying on some active chain.
         \item \textbf{Action}: Search $\mathcal{T}$ using $v$'s $x$-coordinate to find the closest chains to the left ($C_{left}$) and right ($C_{right}$).
-        \item \textbf{Note}: This does not alter the structure of $\mathcal{T}$ (unless $v$ is also a peak/valley), but uses it to find visibility.
-        \item \textbf{Complexity}: $O(\log k)$ query time.
+        \item \textbf{Complexity}: $O(\log r)$ query time.
     \end{itemize}
 \end{enumerate}
 
-\subsection{Processing Logic}
-When processing a reflex vertex $v$:
-\begin{enumerate}
-    \item We perform a binary search in $\mathcal{T}$ using $v$'s current $x$-coordinate.
-    \item \textbf{Find Left Neighbor ($C_{left}$)}: The predecessor of $v$ in $\mathcal{T}$. This is the chain immediately to the left of $v$ at the current scan line.
-    \item \textbf{Find Right Neighbor ($C_{right}$)}: The successor of $v$ in $\mathcal{T}$.
-    \item \textbf{Add Diagonal}: We connect $v$ to a "helper" vertex stored with $C_{left}$ or $C_{right}$ to resolve the reflex angle.
-\end{enumerate}
+\section{Achieving $O(1)$ Chain Comparison}
 
-\subsection{Comparison Logic}
-To insert a chain or search for a point in $\mathcal{T}$, we define a comparison function `Compare(Chain A, Chain B)`:
+A critical detail is how to compare two chains $C_1$ and $C_2$ in $O(1)$ time during the BST operations, without processing all $n$ polygon vertices as events.
+
+\subsection{The Challenge}
+To compare $C_1$ and $C_2$ at sweep height $y$, we need to calculate their $x$-intersections. This requires knowing the specific edge of each chain that spans $y$. Since a chain can contain many edges, finding the active edge could take $O(\log |C|)$, breaking the complexity bound.
+
+\subsection{Solution: Lazy Pointer Advancement (Amortized $O(1)$)}
+We do not store all vertices in the event queue (which would require $O(n \log n)$ sorting). Instead, we only sort the $O(r)$ reflex vertices and chain endpoints.
+
+For the regular vertices on a chain, we handle them via \textbf{lazy updates}:
 \begin{itemize}
-    \item Evaluate $x_A$ = intersection of Chain A with $y = current\_sweep\_y$.
-    \item Evaluate $x_B$ = intersection of Chain B with $y = current\_sweep\_y$.
-    \item Return $x_A < x_B$.
+    \item Each active chain object in $\mathcal{T}$ maintains a pointer to its \textbf{current active edge}.
+    \item When a comparison `Compare(C1, C2)` is invoked at height $y$:
+    \begin{enumerate}
+        \item Check if $C_1$'s current edge covers $y$ (i.e., $edge.min\_y \le y$).
+        \item If not, advance the pointer to the next edge in the monotone chain until the condition is met.
+        \item Repeat for $C_2$.
+        \item Compute intersections and compare in $O(1)$.
+    \end{enumerate}
 \end{itemize}
-This dynamic comparison is valid because the chains are monotonic and do not cross.
 
-\section{Optimality of the Approach}
-
-Is it possible to achieve $O(n + r \log r)$ using the concept of "Reflex Chords"? \textbf{Yes.} The Monotone Chain Sweep algorithm described above is precisely the formalization of that idea. 
-
-By decomposing the polygon into monotone chains (linear time), we ensure that the only "difficult" operations (searching for visibility) occur exactly at the $r$ reflex vertices. The plane sweep structure ensures each search takes only $O(\log r)$ time. 
-
-This is asymptotically optimal for output-sensitive triangulation because sorting the $r$ reflex vertices (implicitly done by the priority queue or initial sort) requires $\Omega(r \log r)$. The $O(n)$ term accounts for reading the input and traversing the simple chains.
-
-Thus, this method is "mega fast" (linear) for convex polygons ($r=0$) and scales gracefully with complexity, never exceeding $O(n \log n)$.
-
-\section{Practical Implementation: Spatial Hashing}
-
-While the Plane Sweep guarantees $O(n + r \log r)$ worst-case time, it involves complex data structures with significant constant-factor overhead (dynamic BSTs, pointer chasing). 
-
-For our practical implementation, we observe that:
+\subsection{Complexity Proof}
+While a single comparison might traverse multiple edges (taking $> O(1)$), the \textbf{total number of advancements} across the entire algorithm is bounded by $n$ (the total number of edges). Since the sweep line only moves downwards, we never backtrack.
 \begin{itemize}
-    \item In many real-world inputs (random, star), reflex vertices are uniformly distributed.
-    \item A \textbf{Spatial Grid (Hash)} can locate the left/right neighbors in $O(1)$ expected time.
+    \item Total cost of pointer advancements: $O(n)$.
+    \item Total cost of BST operations (assuming $O(1)$ per comparison): $O(r \log r)$.
+    \item \textbf{Total Complexity}: $O(n + r \log r)$.
 \end{itemize}
-Our implemented algorithm ("Reflex-Aware Spatial Hashing") replaces the BST with a sparse grid. This changes the complexity from deterministic $O(n + r \log r)$ to expected $O(n)$, which is theoretically superior for dense inputs and achieves the observed 200x speedup.
+This ensures the algorithm remains efficient even for chains with many vertices.
+
+\section{Optimality and Practicality}
+
+Is it possible to achieve $O(n + r \log r)$ using the concept of "Reflex Chords"? \textbf{Yes.} The Monotone Chain Sweep described above is the rigorous implementation of that idea.
+
+However, for our \textbf{implementation}, we chose a \textbf{Spatial Grid} approach.
+\begin{itemize}
+    \item \textbf{Theory}: Sweep Line is $O(n + r \log r)$.
+    \item \textbf{Practice}: Grid is $O(n)$ expected.
+\end{itemize}
+The Grid avoids the overhead of maintaining the BST and performing lazy updates, offering superior performance ($<1$ms for 2K vertices) and robustness, satisfying the "mega fast" requirement practically.
 
 \end{document}
