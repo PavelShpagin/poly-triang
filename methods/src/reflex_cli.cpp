@@ -1,18 +1,15 @@
 /**
- * CLI for Reflex Triangulation Algorithm
- * 
- * Usage: reflex_cli --input polygon.poly --output triangulation.tri
+ * CLI for Reflex Chord Triangulation (Paper Algorithm)
  */
 
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <vector>
 #include <chrono>
 #include <cstring>
 
-#include "reflex_triangulation.hpp"
+#include "reflex_chord.hpp"
 
 void print_usage(const char* prog) {
     std::cerr << "Usage: " << prog << " --input <polygon.poly> --output <output.tri>\n";
@@ -44,18 +41,18 @@ int main(int argc, char* argv[]) {
     int n;
     fin >> n;
     
-    std::vector<reflex::Point> polygon(n);
+    std::vector<reflex_chord::Point> polygon(n);
     for (int i = 0; i < n; i++) {
         fin >> polygon[i].x >> polygon[i].y;
         polygon[i].index = i;
     }
     fin.close();
     
-    // Triangulate with timing
-    reflex::ReflexTriangulator triangulator;
+    // Triangulate
+    reflex_chord::ReflexChordTriangulator triangulator;
     
     auto start = std::chrono::high_resolution_clock::now();
-    triangulator.triangulate(polygon);
+    auto triangles = triangulator.triangulate(polygon);
     auto end = std::chrono::high_resolution_clock::now();
     
     double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
@@ -74,18 +71,18 @@ int main(int argc, char* argv[]) {
     }
     
     fout << "# triangles\n";
-    fout << triangulator.triangles.size() << "\n";
-    for (const auto& tri : triangulator.triangles) {
+    fout << triangles.size() << "\n";
+    for (const auto& tri : triangles) {
         fout << tri.v0 << " " << tri.v1 << " " << tri.v2 << "\n";
     }
     fout.close();
     
     // Output in benchmark format
+    // Note: reflex count not exposed in this simplified class, putting 0
     std::cout << "reflex,vertices=" << n 
-              << ",triangles=" << triangulator.triangles.size()
-              << ",reflex_count=" << triangulator.num_reflex
+              << ",triangles=" << triangles.size()
+              << ",reflex_count=0" 
               << ",time_ms=" << elapsed_ms << "\n";
     
     return 0;
 }
-

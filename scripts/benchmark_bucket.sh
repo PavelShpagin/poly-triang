@@ -23,7 +23,7 @@ python3 "${SCRIPTS_DIR}/generate_polygons.py" --output "${POLY_DIR}" --sizes 100
 
 echo "[2/5] Building executables..."
 cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1
-cmake --build "${BUILD_DIR}" --target bucket_cli earcut_cli -j4 >/dev/null
+cmake --build "${BUILD_DIR}" --target bucket_cli reflex_cli earcut_cli -j4 >/dev/null
 
 echo "[3/5] Running benchmarks..."
 BENCH_CSV="${RESULTS_DIR}/bucket_benchmark.csv"
@@ -47,6 +47,22 @@ run_bucket() {
     printf "  %-8s %-8s %8s verts  r=%6s  grid=%4s  %12s ms\n" "Bucket" "${ptype}" "${num_vertices}" "${num_reflex}" "${grid_size}" "${time_ms}"
   else
     printf "  %-8s %-8s %8s verts  FAILED\n" "Bucket" "${ptype}" "${num_vertices}"
+  fi
+}
+
+# Function to run reflex
+run_reflex() {
+  local poly="$1"
+  local ptype="$2"
+  local num_vertices="$3"
+  
+  local output="${RESULTS_DIR}/reflex_$(basename "${poly}" .poly).tri"
+  if log="$("${BIN_DIR}/reflex_cli" --input "${poly}" --output "${output}" 2>&1)"; then
+    time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
+    echo "reflex,${ptype},${num_vertices},0,0,${time_ms}" >> "${BENCH_CSV}"
+    printf "  %-8s %-8s %8s verts  %28s ms\n" "Reflex" "${ptype}" "${num_vertices}" "${time_ms}"
+  else
+    printf "  %-8s %-8s %8s verts  FAILED\n" "Reflex" "${ptype}" "${num_vertices}"
   fi
 }
 
@@ -90,6 +106,7 @@ for ptype in convex random star; do
     fi
     
     run_bucket "${poly}" "${ptype}" "${num_vertices}"
+    run_reflex "${poly}" "${ptype}" "${num_vertices}"
     run_earcut "${poly}" "${ptype}" "${num_vertices}"
   done
 done

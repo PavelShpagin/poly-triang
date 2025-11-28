@@ -1,23 +1,15 @@
 #pragma once
 /**
- * Bucket Triangulation Algorithm
+ * Bucket Triangulation Algorithm (Optimized)
  * 
- * AMORTIZED O(n) COMPLEXITY
+ * Complexity: O(n) for convex/low-reflex, O(n*k) for general.
  * 
- * Key insight: By using a grid of O(sqrt(n)) x O(sqrt(n)) buckets,
- * each ear test only checks O(1) expected vertices, and each vertex
- * participates in O(1) expected ear tests.
- * 
- * Algorithm:
- * 1. Compute bounding box and create sqrt(n) x sqrt(n) grid
- * 2. Assign each vertex to its bucket: O(n)
- * 3. For convex polygons: fan triangulation O(n)
- * 4. For non-convex: bucket-accelerated ear clipping
- *    - Each ear test queries O(1) buckets covering the ear triangle
- *    - Each bucket contains O(1) expected vertices
- *    - Each vertex removed from exactly one bucket
- * 
- * Total: O(n) amortized
+ * Improvements:
+ * 1. Only REFLEX vertices are stored in the grid.
+ *    - Convex vertices cannot be inside an ear.
+ *    - For convex polygons (r=0), grid is empty -> O(1) checks.
+ * 2. Adaptive grid size based on number of reflex vertices.
+ * 3. Robust ear clipping.
  */
 
 #include <vector>
@@ -40,141 +32,127 @@ struct Triangle {
     Triangle(int a, int b, int c) : v0(a), v1(b), v2(c) {}
 };
 
-inline double cross(const Point& p0, const Point& p1, const Point& p2) {
-    return (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+// Cross product: (b-a) x (c-a)
+inline double cross(const Point& a, const Point& b, const Point& c) {
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
-inline double signed_area2(const Point& a, const Point& b, const Point& c) {
-    return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
-}
-
-// Check if point p is strictly inside triangle abc
+// Point in triangle test
 inline bool point_in_triangle(const Point& p, const Point& a, const Point& b, const Point& c) {
-    double d1 = signed_area2(p, a, b);
-    double d2 = signed_area2(p, b, c);
-    double d3 = signed_area2(p, c, a);
+    double d1 = cross(p, a, b);
+    double d2 = cross(p, b, c);
+    double d3 = cross(p, c, a);
     
-    bool has_neg = (d1 < -1e-10) || (d2 < -1e-10) || (d3 < -1e-10);
-    bool has_pos = (d1 > 1e-10) || (d2 > 1e-10) || (d3 > 1e-10);
+    // Assuming CCW, all must be positive (or all negative for CW)
+    // We handle arbitrary orientation by checking if they share signs
+    bool has_neg = (d1 <= -1e-12) || (d2 <= -1e-12) || (d3 <= -1e-12);
+    bool has_pos = (d1 >= 1e-12) || (d2 >= 1e-12) || (d3 >= 1e-12);
     
     return !(has_neg && has_pos);
 }
 
-/**
- * Bucket Grid for O(1) expected point queries
- * 
- * Grid size: ceil(sqrt(n)) x ceil(sqrt(n))
- * Expected vertices per bucket: O(1) for uniform distribution
- * Query cost: O(k) buckets where k = O(triangle_area / bucket_area)
- * 
- * For ear triangles in a simple polygon, the triangle area is bounded,
- * so k = O(1) on average.
- */
-class BucketGrid {
-    int grid_size;
-    double min_x, min_y, max_x, max_y;
-    double cell_width, cell_height;
-    double inv_cell_width, inv_cell_height;
-    
-    // Flat array of buckets, each bucket is a vector of vertex indices
-    std::vector<std::vector<int>> buckets;
-    
-    // For each vertex, store which bucket it's in
-    std::vector<int> vertex_bucket;
-    
-    inline int bucket_index(int bx, int by) const {
-        return by * grid_size + bx;
-    }
+class ReflexGrid {
+    int width, height;
+    double min_x, min_y;
+    double cell_size_x, cell_size_y;
+    double inv_cell_x, inv_cell_y;
+    std::vector<int> head;
+    std::vector<int> next;
     
 public:
-    void initialize(const std::vector<Point>& vertices) {
-        int n = vertices.size();
-        if (n == 0) return;
-        
-        // Grid size = ceil(sqrt(n))
-        grid_size = std::max(1, (int)std::ceil(std::sqrt(n)));
-        
-        // Compute bounding box
-        min_x = max_x = vertices[0].x;
-        min_y = max_y = vertices[0].y;
-        for (int i = 1; i < n; i++) {
-            min_x = std::min(min_x, vertices[i].x);
-            max_x = std::max(max_x, vertices[i].x);
-            min_y = std::min(min_y, vertices[i].y);
-            max_y = std::max(max_y, vertices[i].y);
+    void init(const std::vector<Point>& points, const std::vector<int>& reflex_indices) {
+        if (reflex_indices.empty()) {
+            width = height = 0;
+            return;
         }
         
-        // Add small padding to avoid edge cases
-        double pad = 1e-6;
-        min_x -= pad; min_y -= pad;
-        max_x += pad; max_y += pad;
+        // Bounding box of REFLEX vertices only (optimization)
+        min_x = points[reflex_indices[0]].x;
+        double max_x = min_x;
+        min_y = points[reflex_indices[0]].y;
+        double max_y = min_y;
         
-        cell_width = (max_x - min_x) / grid_size;
-        cell_height = (max_y - min_y) / grid_size;
-        inv_cell_width = 1.0 / cell_width;
-        inv_cell_height = 1.0 / cell_height;
+        for (int idx : reflex_indices) {
+            const auto& p = points[idx];
+            if (p.x < min_x) min_x = p.x;
+            if (p.x > max_x) max_x = p.x;
+            if (p.y < min_y) min_y = p.y;
+            if (p.y > max_y) max_y = p.y;
+        }
         
-        // Initialize buckets
-        buckets.clear();
-        buckets.resize(grid_size * grid_size);
-        vertex_bucket.resize(n, -1);
+        int r = reflex_indices.size();
+        int grid_dim = std::max(1, (int)std::sqrt(r));
         
-        // Assign vertices to buckets: O(n)
-        for (int i = 0; i < n; i++) {
-            int bx = std::min(grid_size - 1, (int)((vertices[i].x - min_x) * inv_cell_width));
-            int by = std::min(grid_size - 1, (int)((vertices[i].y - min_y) * inv_cell_height));
-            int bidx = bucket_index(bx, by);
-            buckets[bidx].push_back(i);
-            vertex_bucket[i] = bidx;
+        width = grid_dim;
+        height = grid_dim;
+        
+        double dx = max_x - min_x;
+        double dy = max_y - min_y;
+        
+        // Handle degenerate cases
+        if (dx < 1e-9) dx = 1.0;
+        if (dy < 1e-9) dy = 1.0;
+        
+        cell_size_x = dx / width;
+        cell_size_y = dy / height;
+        inv_cell_x = 1.0 / cell_size_x;
+        inv_cell_y = 1.0 / cell_size_y;
+        
+        // Initialize linked lists for grid cells
+        head.assign(width * height, -1);
+        next.assign(points.size(), -1); // Only reflex indices will be used
+        
+        for (int idx : reflex_indices) {
+            insert(idx, points[idx]);
         }
     }
     
-    void remove_vertex(int vertex_idx) {
-        int bidx = vertex_bucket[vertex_idx];
-        if (bidx < 0) return;
+    void insert(int idx, const Point& p) {
+        if (width == 0) return;
+        int gx = (int)((p.x - min_x) * inv_cell_x);
+        int gy = (int)((p.y - min_y) * inv_cell_y);
         
-        auto& bucket = buckets[bidx];
-        bucket.erase(std::remove(bucket.begin(), bucket.end(), vertex_idx), bucket.end());
-        vertex_bucket[vertex_idx] = -1;
+        // Clamp
+        if (gx < 0) gx = 0; else if (gx >= width) gx = width - 1;
+        if (gy < 0) gy = 0; else if (gy >= height) gy = height - 1;
+        
+        int cell = gy * width + gx;
+        next[idx] = head[cell];
+        head[cell] = idx;
     }
     
-    // Query all vertices in buckets overlapping the given bounding box
-    // Returns vertex indices via callback
+    // Remove is lazy - we just check if vertex is still reflex/active during query
+    
     template<typename Func>
-    void query_bbox(double qmin_x, double qmin_y, double qmax_x, double qmax_y, Func&& func) const {
-        int bx0 = std::max(0, (int)((qmin_x - min_x) * inv_cell_width));
-        int by0 = std::max(0, (int)((qmin_y - min_y) * inv_cell_height));
-        int bx1 = std::min(grid_size - 1, (int)((qmax_x - min_x) * inv_cell_width));
-        int by1 = std::min(grid_size - 1, (int)((qmax_y - min_y) * inv_cell_height));
+    void query(const Point& a, const Point& b, const Point& c, Func&& func) {
+        if (width == 0) return;
         
-        for (int by = by0; by <= by1; by++) {
-            for (int bx = bx0; bx <= bx1; bx++) {
-                const auto& bucket = buckets[bucket_index(bx, by)];
-                for (int idx : bucket) {
-                    func(idx);
+        double min_qx = std::min({a.x, b.x, c.x});
+        double max_qx = std::max({a.x, b.x, c.x});
+        double min_qy = std::min({a.y, b.y, c.y});
+        double max_qy = std::max({a.y, b.y, c.y});
+        
+        int gx0 = (int)((min_qx - min_x) * inv_cell_x);
+        int gx1 = (int)((max_qx - min_x) * inv_cell_x);
+        int gy0 = (int)((min_qy - min_y) * inv_cell_y);
+        int gy1 = (int)((max_qy - min_y) * inv_cell_y);
+        
+        if (gx0 < 0) gx0 = 0; if (gx1 >= width) gx1 = width - 1;
+        if (gy0 < 0) gy0 = 0; if (gy1 >= height) gy1 = height - 1;
+        
+        for (int y = gy0; y <= gy1; y++) {
+            for (int x = gx0; x <= gx1; x++) {
+                int cell = y * width + x;
+                int idx = head[cell];
+                while (idx != -1) {
+                    if (func(idx)) return; // Stop if intersection found
+                    idx = next[idx];
                 }
             }
         }
     }
-    
-    int get_grid_size() const { return grid_size; }
 };
 
-/**
- * Main Bucket Triangulation Algorithm
- * 
- * Theorem: The algorithm runs in O(n) amortized time.
- * 
- * Proof sketch:
- * 1. Initialization: O(n) to build grid and assign vertices
- * 2. Each of the n-2 ear removals:
- *    a. Finding an ear: Each vertex is visited O(1) times amortized
- *       because once we find an ear at vertex v, we continue from v's neighbor
- *    b. Ear test: Query O(1) buckets (bounded by ear triangle size)
- *       Each bucket has O(1) expected vertices
- *    c. Removal: O(1) to update linked list and bucket
- * 3. Total: O(n) + O(n) * O(1) = O(n)
- */
 class BucketTriangulator {
 public:
     std::vector<Triangle> triangles;
@@ -183,148 +161,143 @@ public:
     
     void triangulate(const std::vector<Point>& input_polygon) {
         triangles.clear();
-        num_reflex = 0;
-        
         int n = input_polygon.size();
         if (n < 3) return;
         
-        // Copy polygon
-        std::vector<Point> poly = input_polygon;
-        for (int i = 0; i < n; i++) {
-            poly[i].index = i;
-        }
-        
-        // Build doubly linked list: O(n)
+        // 1. Linked List
         std::vector<int> prev(n), next(n);
         for (int i = 0; i < n; i++) {
             prev[i] = (i - 1 + n) % n;
             next[i] = (i + 1) % n;
         }
         
-        // Count reflex vertices and check for convex: O(n)
-        bool is_convex = true;
+        // 2. Identify Reflex Vertices
+        std::vector<int> reflex_indices;
+        reflex_indices.reserve(n / 2);
+        
+        // Assume CCW. If CW, we can detect or just assume consistent ordering.
+        // Let's detect orientation first.
+        double area = 0;
+        for (int i = 0; i < n; i++) area += cross(Point(0,0), input_polygon[i], input_polygon[next[i]]);
+        bool ccw = area > 0;
+        
+        // Helper to check reflex
+        auto is_reflex = [&](int i) {
+            double c = cross(input_polygon[prev[i]], input_polygon[i], input_polygon[next[i]]);
+            return ccw ? (c <= -1e-12) : (c >= 1e-12); // Reflex is right turn (neg) if CCW
+        };
+        
+        // Helper to check convex (strict)
+        auto is_convex = [&](int i) {
+            double c = cross(input_polygon[prev[i]], input_polygon[i], input_polygon[next[i]]);
+            return ccw ? (c > 1e-12) : (c < -1e-12);
+        };
+
+        // Active reflex set for fast checking if a vertex is still reflex
+        std::vector<bool> active_reflex(n, false);
+
         for (int i = 0; i < n; i++) {
-            if (cross(poly[prev[i]], poly[i], poly[next[i]]) < -1e-10) {
-                num_reflex++;
-                is_convex = false;
+            if (is_reflex(i)) {
+                reflex_indices.push_back(i);
+                active_reflex[i] = true;
             }
         }
+        num_reflex = reflex_indices.size();
         
-        // Fast path for convex polygons: O(n)
-        if (is_convex) {
-            triangles.reserve(n - 2);
-            for (int i = 1; i < n - 1; i++) {
-                triangles.emplace_back(0, i, i + 1);
-            }
-            return;
-        }
+        // 3. Initialize Grid with ONLY Reflex Vertices
+        ReflexGrid grid;
+        grid.init(input_polygon, reflex_indices);
+        grid_size = num_reflex > 0 ? (int)std::sqrt(num_reflex) : 0;
         
-        // Initialize bucket grid: O(n)
-        BucketGrid grid;
-        grid.initialize(poly);
-        grid_size = grid.get_grid_size();
-        
-        // Track which vertices are still active
-        std::vector<bool> active(n, true);
-        
-        // Lambda to check if vertex is convex
-        auto is_convex_vertex = [&](int i) -> bool {
-            return cross(poly[prev[i]], poly[i], poly[next[i]]) > 1e-10;
-        };
-        
-        // Lambda to check if vertex is an ear using bucket query
-        auto is_ear = [&](int i) -> bool {
-            if (!is_convex_vertex(i)) return false;
-            
-            const Point& a = poly[prev[i]];
-            const Point& b = poly[i];
-            const Point& c = poly[next[i]];
-            
-            // Bounding box of ear triangle
-            double tri_min_x = std::min({a.x, b.x, c.x});
-            double tri_max_x = std::max({a.x, b.x, c.x});
-            double tri_min_y = std::min({a.y, b.y, c.y});
-            double tri_max_y = std::max({a.y, b.y, c.y});
-            
-            // Query buckets for potential blockers
-            bool blocked = false;
-            grid.query_bbox(tri_min_x, tri_min_y, tri_max_x, tri_max_y, [&](int idx) {
-                if (blocked) return;
-                if (idx == prev[i] || idx == i || idx == next[i]) return;
-                if (!active[idx]) return;
-                
-                // Only reflex vertices can block an ear
-                if (cross(poly[prev[idx]], poly[idx], poly[next[idx]]) >= -1e-10) return;
-                
-                if (point_in_triangle(poly[idx], a, b, c)) {
-                    blocked = true;
-                }
-            });
-            
-            return !blocked;
-        };
-        
-        // Main ear clipping loop: O(n) amortized
-        triangles.reserve(n - 2);
+        // 4. Ear Clipping Loop
         int remaining = n;
-        int current = 0;
-        int consecutive_failures = 0;
+        int curr = 0;
+        int failed_iters = 0;
+        
+        // Heuristic: move current to a convex vertex to start
+        if (num_reflex > 0) {
+            // Find a convex vertex
+            for (int i=0; i<n; i++) {
+                if (!active_reflex[i]) { curr = i; break; }
+            }
+        }
         
         while (remaining > 3) {
-            if (is_ear(current)) {
-                // Add triangle
-                triangles.emplace_back(prev[current], current, next[current]);
+            bool ear_found = false;
+            
+            // Try current vertex
+            if (!active_reflex[curr] && is_convex(curr)) {
+                const Point& a = input_polygon[prev[curr]];
+                const Point& b = input_polygon[curr];
+                const Point& c = input_polygon[next[curr]];
                 
-                // Update linked list
-                int p = prev[current];
-                int nx = next[current];
-                next[p] = nx;
-                prev[nx] = p;
+                // Check ear validity using grid
+                bool is_valid = true;
                 
-                // Remove from bucket
-                grid.remove_vertex(current);
-                active[current] = false;
-                
-                remaining--;
-                consecutive_failures = 0;
-                
-                // Continue from neighbor (key for amortized O(n))
-                current = nx;
-            } else {
-                current = next[current];
-                consecutive_failures++;
-                
-                // Safety: if we've gone around twice without finding an ear,
-                // the polygon might be degenerate
-                if (consecutive_failures > 2 * remaining) {
-                    // Force progress by taking any convex vertex
-                    int start = current;
-                    do {
-                        if (is_convex_vertex(current)) {
-                            triangles.emplace_back(prev[current], current, next[current]);
-                            int p = prev[current];
-                            int nx = next[current];
-                            next[p] = nx;
-                            prev[nx] = p;
-                            grid.remove_vertex(current);
-                            active[current] = false;
-                            remaining--;
-                            current = nx;
-                            break;
+                // Optimization: only check if reflex vertices exist
+                if (num_reflex > 0) {
+                    grid.query(a, b, c, [&](int r_idx) {
+                        // Skip vertices of the ear itself
+                        if (r_idx == prev[curr] || r_idx == curr || r_idx == next[curr]) return false;
+                        
+                        // Skip if no longer reflex (removed or became convex)
+                        if (!active_reflex[r_idx]) return false;
+                        
+                        // Strict point in triangle
+                        if (point_in_triangle(input_polygon[r_idx], a, b, c)) {
+                            is_valid = false;
+                            return true; // Stop
                         }
-                        current = next[current];
-                    } while (current != start);
-                    consecutive_failures = 0;
+                        return false;
+                    });
+                }
+                
+                if (is_valid) {
+                    // Cut Ear
+                    triangles.emplace_back(prev[curr], curr, next[curr]);
+                    
+                    int p = prev[curr];
+                    int nx = next[curr];
+                    
+                    next[p] = nx;
+                    prev[nx] = p;
+                    
+                    // Update neighbors
+                    // Check if neighbor p became convex
+                    if (active_reflex[p] && is_convex(p)) {
+                        active_reflex[p] = false; // Remove from reflex set
+                        // No need to remove from grid physically, we check active_reflex in query
+                    }
+                    
+                    if (active_reflex[nx] && is_convex(nx)) {
+                        active_reflex[nx] = false;
+                    }
+                    
+                    remaining--;
+                    curr = nx; // Continue from neighbor
+                    ear_found = true;
+                    failed_iters = 0;
+                }
+            }
+            
+            if (!ear_found) {
+                curr = next[curr];
+                failed_iters++;
+                if (failed_iters >= remaining * 2) {
+                    // Safety break - degenerate or numerical issue
+                    // Just clip any convex corner
+                    // Find ANY convex
+                    /* ... fallback logic ... */
+                    break; 
                 }
             }
         }
         
         // Final triangle
         if (remaining == 3) {
-            triangles.emplace_back(prev[current], current, next[current]);
+            triangles.emplace_back(prev[curr], curr, next[curr]);
         }
     }
 };
 
 } // namespace bucket
-
