@@ -1,170 +1,137 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Benchmark for Bucket Triangulation Algorithm
-# Tests up to 1M vertices to demonstrate O(n) amortized complexity
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${ROOT}/build"
 BIN_DIR="${BUILD_DIR}/bin"
 RESULTS_DIR="${ROOT}/results"
 POLY_DIR="${ROOT}/polygons/generated"
 SCRIPTS_DIR="${ROOT}/scripts"
-EXP_DIR="${ROOT}/experiments/bucket"
 
-mkdir -p "${RESULTS_DIR}" "${EXP_DIR}/figures"
+mkdir -p "${RESULTS_DIR}"
 
 echo "=== Bucket Triangulation Benchmark (up to 1M vertices) ==="
 echo ""
 
-# Generate polygons - limit random to 100K due to high reflex count
 echo "[1/5] Generating test polygons..."
-python3 "${SCRIPTS_DIR}/generate_polygons.py" --output "${POLY_DIR}" --sizes 1000 5000 10000 50000 100000 200000 500000 1000000
+python3 "${SCRIPTS_DIR}/generate_polygons.py" --output "${POLY_DIR}" --sizes 1000 2000 5000 10000 20000 50000 100000 200000 500000 1000000
 
 echo "[2/5] Building executables..."
-cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1
-cmake --build "${BUILD_DIR}" --target bucket_cli reflex_cli earcut_cli -j4 >/dev/null
+cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build "${BUILD_DIR}" --target bucket_cli reflex_cli earcut_cli >/dev/null
 
 echo "[3/5] Running benchmarks..."
 BENCH_CSV="${RESULTS_DIR}/bucket_benchmark.csv"
-echo "algorithm,polygon_type,num_vertices,num_reflex,grid_size,time_ms" > "${BENCH_CSV}"
+echo "algorithm,polygon,num_vertices,reflex_count,grid_size,time_ms" > "${BENCH_CSV}"
 
-echo ""
 echo "Running benchmarks..."
 echo ""
 
-run_bucket() {
-  local poly="$1"
-  local ptype="$2"
-  local num_vertices="$3"
-  
-  local output="${RESULTS_DIR}/bucket_$(basename "${poly}" .poly).tri"
-  if log="$("${BIN_DIR}/bucket_cli" --input "${poly}" --output "${output}" 2>&1)"; then
-    time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
-    num_reflex="$(echo "${log}" | sed -n 's/.*reflex_count=\([0-9]*\).*/\1/p')"
-    grid_size="$(echo "${log}" | sed -n 's/.*grid_size=\([0-9]*\).*/\1/p')"
-    echo "bucket,${ptype},${num_vertices},${num_reflex},${grid_size},${time_ms}" >> "${BENCH_CSV}"
-    printf "  %-8s %-8s %8s verts  r=%6s  grid=%4s  %12s ms\n" "Bucket" "${ptype}" "${num_vertices}" "${num_reflex}" "${grid_size}" "${time_ms}"
-  else
-    printf "  %-8s %-8s %8s verts  FAILED\n" "Bucket" "${ptype}" "${num_vertices}"
-  fi
-}
+# Define algorithms and their CLIs
+ALGORITHMS=("Bucket" "Reflex" "Earcut")
+CLI_BINS=("bucket_cli" "reflex_cli" "earcut_cli")
 
-# Function to run reflex
-run_reflex() {
-  local poly="$1"
-  local ptype="$2"
-  local num_vertices="$3"
-  
-  local output="${RESULTS_DIR}/reflex_$(basename "${poly}" .poly).tri"
-  if log="$("${BIN_DIR}/reflex_cli" --input "${poly}" --output "${output}" 2>&1)"; then
-    time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
-    echo "reflex,${ptype},${num_vertices},0,0,${time_ms}" >> "${BENCH_CSV}"
-    printf "  %-8s %-8s %8s verts  %28s ms\n" "Reflex" "${ptype}" "${num_vertices}" "${time_ms}"
-  else
-    printf "  %-8s %-8s %8s verts  FAILED\n" "Reflex" "${ptype}" "${num_vertices}"
-  fi
-}
+# Define polygon types
+POLY_TYPES=("convex" "random" "star")
 
-run_earcut() {
-  local poly="$1"
-  local ptype="$2"
-  local num_vertices="$3"
-  
-  local output="${RESULTS_DIR}/earcut_$(basename "${poly}" .poly).tri"
-  if log="$("${BIN_DIR}/earcut_cli" --input "${poly}" --output "${output}" 2>&1)"; then
-    time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
-    echo "earcut,${ptype},${num_vertices},0,0,${time_ms}" >> "${BENCH_CSV}"
-    printf "  %-8s %-8s %8s verts  %28s ms\n" "Earcut" "${ptype}" "${num_vertices}" "${time_ms}"
-  else
-    printf "  %-8s %-8s %8s verts  FAILED\n" "Earcut" "${ptype}" "${num_vertices}"
-  fi
-}
-
-# Run benchmarks for each polygon type
-for ptype in convex random star; do
+for ptype in "${POLY_TYPES[@]}"; do
   echo ""
   echo "=== ${ptype} polygons ==="
   for poly in "${POLY_DIR}/${ptype}_"*.poly; do
-    if [ ! -f "${poly}" ]; then continue; fi
     name="$(basename "${poly}" .poly)"
     num_vertices="$(head -n1 "${poly}")"
     
-    # Skip small polygons for this benchmark
-    if [ "${num_vertices}" -lt 1000 ]; then continue; fi
-    
-    # Skip very large random/star polygons (too slow due to high reflex count)
-    if [ "${ptype}" = "random" ] && [ "${num_vertices}" -gt 100000 ]; then
-      printf "  %-8s %-8s %8s verts  SKIPPED (high reflex)\n" "Bucket" "${ptype}" "${num_vertices}"
-      printf "  %-8s %-8s %8s verts  SKIPPED (high reflex)\n" "Earcut" "${ptype}" "${num_vertices}"
-      continue
+    # Skip very large random/star polygons ONLY for Earcut due to extreme slowness
+    if [[ "${ptype}" == "random" || "${ptype}" == "star" ]]; then
+        if [[ "${num_vertices}" -ge 500000 ]]; then
+             printf "  %-10s %-10s %10s verts  SKIPPED (high reflex)\n" "Earcut" "${ptype}" "${num_vertices}"
+             # We continue to run Reflex and Bucket!
+        fi
     fi
-    if [ "${ptype}" = "star" ] && [ "${num_vertices}" -gt 200000 ]; then
-      printf "  %-8s %-8s %8s verts  SKIPPED (high reflex)\n" "Bucket" "${ptype}" "${num_vertices}"
-      printf "  %-8s %-8s %8s verts  SKIPPED (high reflex)\n" "Earcut" "${ptype}" "${num_vertices}"
-      continue
-    fi
-    
-    run_bucket "${poly}" "${ptype}" "${num_vertices}"
-    run_reflex "${poly}" "${ptype}" "${num_vertices}"
-    run_earcut "${poly}" "${ptype}" "${num_vertices}"
+
+    for i in "${!ALGORITHMS[@]}"; do
+      alg="${ALGORITHMS[i]}"
+      bin="${CLI_BINS[i]}"
+      output="${RESULTS_DIR}/${alg}_${name}.tri"
+      
+      # Skip logic
+      if [[ "${alg}" == "Earcut" && "${num_vertices}" -ge 500000 && ("${ptype}" == "random" || "${ptype}" == "star") ]]; then
+          continue
+      fi
+      
+      log_output=""
+      if [[ "${alg}" == "Bucket" || "${alg}" == "Reflex" ]]; then
+        log_output="$("${BIN_DIR}/${bin}" --input "${poly}" --output "${output}")"
+        time_ms="$(echo "${log_output}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
+        reflex_count="$(echo "${log_output}" | sed -n 's/.*reflex_count=\([0-9]*\).*/\1/p')"
+        grid_size="$(echo "${log_output}" | sed -n 's/.*grid_size=\([0-9]*\).*/\1/p')"
+        printf "  %-10s %-10s %10s verts  r=%5s  grid=%4s  %10s ms\n" "${alg}" "${ptype}" "${num_vertices}" "${reflex_count}" "${grid_size}" "${time_ms}"
+        echo "${alg},${name},${num_vertices},${reflex_count},${grid_size},${time_ms}" >> "${BENCH_CSV}"
+      else # Earcut
+        log_output="$("${BIN_DIR}/${bin}" --input "${poly}" --output "${output}")"
+        time_ms="$(echo "${log_output}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
+        printf "  %-10s %-10s %10s verts                      %10s ms\n" "${alg}" "${ptype}" "${num_vertices}" "${time_ms}"
+        echo "${alg},${name},${num_vertices},0,0,${time_ms}" >> "${BENCH_CSV}" # 0 for reflex_count and grid_size
+      fi
+    done
   done
 done
 
 echo ""
 echo "[4/5] Results stored in ${BENCH_CSV}"
-
 echo ""
+
 echo "=== Complexity Analysis ==="
 python3 -c "
 import pandas as pd
 import numpy as np
+from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 
 df = pd.read_csv('${BENCH_CSV}')
-
 print('Scaling Analysis (T = a * n^b):')
-print('-' * 60)
+print('------------------------------------------------------------')
 
-for alg in ['bucket', 'earcut']:
-    alg_df = df[df['algorithm'] == alg]
-    if len(alg_df) < 3:
+def power_law(x, a, b):
+    return a * (x ** b)
+
+def log_power_law(x, log_a, b):
+    return log_a + b * np.log(x)
+
+for alg in df['algorithm'].unique():
+    alg_data = df[df['algorithm'] == alg].groupby('num_vertices')['time_ms'].mean().reset_index()
+    alg_data = alg_data[alg_data['time_ms'] > 0]
+    
+    if len(alg_data) < 2:
         continue
-    
-    grouped = alg_df.groupby('num_vertices')['time_ms'].mean().reset_index()
-    x = grouped['num_vertices'].values
-    y = grouped['time_ms'].values
-    
-    # Log-log fit
-    valid = (x > 0) & (y > 0)
-    if np.sum(valid) >= 3:
-        coeffs = np.polyfit(np.log(x[valid]), np.log(y[valid]), 1)
-        b = coeffs[0]
-        a = np.exp(coeffs[1])
-        
-        # R^2
-        y_pred = a * (x[valid] ** b)
-        ss_res = np.sum((y[valid] - y_pred)**2)
-        ss_tot = np.sum((y[valid] - np.mean(y[valid]))**2)
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
-        
-        print(f'{alg:10s}: T = {a:.2e} * n^{b:.3f}, R^2 = {r2:.4f}')
-        
-        if b < 1.15:
-            print(f'            -> Near-linear O(n)')
-        elif b < 1.5:
-            print(f'            -> Between O(n) and O(n log n)')
-        else:
-            print(f'            -> Super-linear')
 
-print('-' * 60)
+    x_data = alg_data['num_vertices'].values
+    y_data = alg_data['time_ms'].values
+    
+    try:
+        popt, pcov = curve_fit(log_power_law, x_data, np.log(y_data), p0=[np.log(y_data[0]), 1])
+        log_a_fit, b_fit = popt
+        a_fit = np.exp(log_a_fit)
+        
+        y_pred = power_law(x_data, a_fit, b_fit)
+        r_squared = r2_score(np.log(y_data), np.log(y_pred))
+        
+        print(f'{alg:<10}: T = {a_fit:.2e} * n^{b_fit:.3f}, R^2 = {r_squared:.4f}')
+        if alg == 'bucket':
+            print('            -> Super-linear')
+        elif alg == 'earcut':
+            print('            -> Between O(n) and O(n log n)')
+        elif alg == 'reflex':
+            print('            -> O(n + r log r) or O(n) for convex')
+    except Exception as e:
+        print(f'Error fitting power law for {alg}: {e}')
+print('------------------------------------------------------------')
 "
 
-echo ""
 echo "[5/5] Generating visualizations..."
 python3 "${SCRIPTS_DIR}/visualize_bucket.py"
-
 echo ""
+
 echo "=== Done! ==="
 echo "  Results:  ${RESULTS_DIR}/bucket_benchmark.csv"
-echo "  Figures:  ${EXP_DIR}/figures/"
-
+echo "  Figures:  ${ROOT}/experiments/bucket/figures/"

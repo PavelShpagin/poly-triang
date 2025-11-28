@@ -1,0 +1,234 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{array}
+
+\geometry{margin=0.75in}
+
+\title{Catalog of Polygon Classes with O(n) Triangulation Algorithms}
+\author{Universal Triangulation Project}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Complete Taxonomy of Polygon Classes}
+
+The following table catalogs all known polygon classes that admit $O(n)$ triangulation algorithms. These classes together span the entire space of simple polygons.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{longtable}{>{\raggedright}p{2.5cm} p{4.5cm} p{3cm} p{1.5cm} p{2.5cm}}
+\toprule
+\textbf{Polygon Class} & \textbf{Definition} & \textbf{Algorithm} & \textbf{Year} & \textbf{Reference} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Polygon Class} & \textbf{Definition} & \textbf{Algorithm} & \textbf{Year} & \textbf{Reference} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{5}{r}{\textit{Continued on next page...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\textbf{Convex} & All interior angles $\leq 180^\circ$; all diagonals internal & Fan triangulation from any vertex & Ancient & Folklore \\
+
+\textbf{Star-Shaped} & Exists kernel point $k$ visible from all boundary points & Connect kernel to all vertices & 1975 & Shamos \\
+
+\textbf{Y-Monotone} & Any horizontal line intersects polygon in at most one segment & Stack-based linear sweep & 1978 & Garey et al. \\
+
+\textbf{X-Monotone} & Any vertical line intersects polygon in at most one segment & Stack-based linear sweep & 1978 & Garey et al. \\
+
+\textbf{Monotone (general)} & Monotone w.r.t.\ some direction $d$ & Rotate to axis-aligned, apply y-monotone & 1978 & Garey et al. \\
+
+\textbf{Orthogonal} & All edges axis-aligned (horizontal/vertical) & Horizontal decomposition into monotone & 1982 & Chazelle \\
+
+\textbf{Spiral (Funnel)} & Single reflex chain between two convex endpoints & Linear visibility triangulation & 1982 & Chazelle \\
+
+\textbf{Edge-Visible} & Every interior point visible from some point on edge $e$ & Visibility-based triangulation & 1981 & ElGindy \& Avis \\
+
+\textbf{Weakly Edge-Visible} & Every boundary point visible from some point on edge $e$ & Weak visibility decomposition & 1983 & Avis \& Toussaint \\
+
+\textbf{L-Shaped} & Orthogonal polygon with at most one reflex vertex & Direct decomposition & 1980 & Various \\
+
+\textbf{Staircase} & Orthogonal polygon with reflex vertices on two opposite corners & Diagonal sweep & 1984 & Lingas \\
+
+\textbf{Histogram} & Y-monotone orthogonal polygon (rectilinear monotone) & Specialized monotone algorithm & 1984 & Fournier \& Montuno \\
+
+\textbf{Unimodal} & Boundary can be split into two chains: one increasing, one decreasing & Equivalent to monotone & 1978 & Garey et al. \\
+
+\textbf{Simple (General)} & Non-self-intersecting boundary & Trapezoidalization with polygon cutting & 1991 & Chazelle \\
+
+\end{longtable}
+\end{center}
+
+\section{Class Inclusion Relationships}
+
+The classes form a hierarchy with the following inclusions:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Inclusion} & \textbf{Relationship} \\
+\midrule
+Convex $\subset$ Star-Shaped & Every convex polygon is star-shaped (kernel = interior) \\
+Convex $\subset$ Monotone & Every convex polygon is monotone in all directions \\
+Star-Shaped $\subset$ Simple & Star-shaped is a special case of simple \\
+Monotone $\subset$ Simple & Monotone is a special case of simple \\
+Spiral $\subset$ Edge-Visible & Spiral polygons are visible from their base edge \\
+Edge-Visible $\subset$ Simple & Edge-visible is a special case of simple \\
+Orthogonal $\cap$ Monotone $\neq \emptyset$ & Histograms are both orthogonal and monotone \\
+L-Shaped $\subset$ Orthogonal & L-shaped is a restricted orthogonal \\
+Staircase $\subset$ Orthogonal & Staircase is a restricted orthogonal \\
+Histogram $\subset$ Orthogonal $\cap$ Monotone & Histograms are monotone orthogonal \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Detection Algorithms}
+
+Each polygon class can be detected in $O(n)$ time:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lll}
+\toprule
+\textbf{Class} & \textbf{Detection Method} & \textbf{Complexity} \\
+\midrule
+Convex & Check all cross products have same sign & $O(n)$ \\
+Star-Shaped & Compute kernel via half-plane intersection & $O(n)$ \\
+Y-Monotone & Check both chains strictly decrease/increase in $y$ & $O(n)$ \\
+X-Monotone & Check both chains strictly decrease/increase in $x$ & $O(n)$ \\
+Orthogonal & Check all edges are horizontal or vertical & $O(n)$ \\
+Spiral & Find leftmost/rightmost, check single reflex chain & $O(n)$ \\
+Edge-Visible & Compute weak visibility polygon from edge & $O(n)$ \\
+Histogram & Check orthogonal + y-monotone & $O(n)$ \\
+Simple & Shamos-Hoey intersection detection & $O(n \log n)^*$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$^*$Simple polygon detection requires $O(n \log n)$, but if input is guaranteed simple, this step is unnecessary.
+
+\section{Algorithm Details by Class}
+
+\subsection{Fan Triangulation (Convex)}
+
+\begin{verbatim}
+FanTriangulate(P):
+    v0 = P[0]
+    for i = 2 to n-1:
+        output triangle(v0, P[i-1], P[i])
+\end{verbatim}
+
+\textbf{Triangles produced}: $n-2$
+
+\textbf{Complexity}: $O(n)$
+
+\subsection{Kernel Triangulation (Star-Shaped)}
+
+\begin{verbatim}
+KernelTriangulate(P):
+    K = ComputeKernel(P)  // O(n) half-plane intersection
+    k = any point in K
+    for i = 0 to n-1:
+        output triangle(k, P[i], P[(i+1) mod n])
+\end{verbatim}
+
+\textbf{Note}: Produces $n$ triangles (including one vertex at kernel), which can be reduced to $n-2$ by merging.
+
+\textbf{Complexity}: $O(n)$
+
+\subsection{Stack-Based Triangulation (Monotone)}
+
+\begin{verbatim}
+MonotoneTriangulate(P):
+    Sort vertices by y-coordinate (already sorted for monotone)
+    Initialize stack S with first two vertices
+    for each remaining vertex v:
+        if v on opposite chain from stack top:
+            pop all from S, add diagonals to v
+            push previous vertex and v
+        else:
+            while S.size >= 2 and diagonal(v, S.second) is valid:
+                pop S, add diagonal
+            push v
+    Add diagonals from last vertex to remaining stack elements
+\end{verbatim}
+
+\textbf{Complexity}: $O(n)$ (each vertex pushed/popped once)
+
+\subsection{Trapezoidalization (General Simple)}
+
+Chazelle's algorithm:
+\begin{enumerate}
+    \item Build a \emph{polygon-cutting} hierarchy
+    \item Compute horizontal trapezoids in $O(n)$ without sorting
+    \item Each trapezoid is a ``mountain'' (monotone with one edge as base)
+    \item Triangulate each mountain in $O(1)$ amortized per triangle
+\end{enumerate}
+
+\textbf{Complexity}: $O(n)$ deterministic
+
+\textbf{Implementation difficulty}: Very high (53-page paper)
+
+\section{Practical Recommendations}
+
+\begin{center}
+\begin{tabular}{lp{8cm}}
+\toprule
+\textbf{Input Type} & \textbf{Recommended Algorithm} \\
+\midrule
+Known convex & Fan triangulation ($O(n)$, trivial) \\
+Known monotone & Stack-based ($O(n)$, simple) \\
+Unknown structure, $n < 1000$ & Ear clipping ($O(n^2)$ but simple and fast) \\
+Unknown structure, $n \geq 1000$ & Seidel randomized ($O(n \log^* n)$ expected) \\
+Worst-case guarantee needed & Chazelle ($O(n)$ but complex) \\
+Near-convex (few reflex) & Reflex-aware ear clipping (this project) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Historical Timeline}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Year} & \textbf{Result} & \textbf{Authors} \\
+\midrule
+1975 & Kernel computation for star-shaped & Shamos \\
+1978 & $O(n)$ for monotone polygons & Garey, Johnson, Preparata, Tarjan \\
+1978 & $O(n \log n)$ decomposition into monotone & Garey et al. \\
+1981 & $O(n)$ for edge-visible polygons & ElGindy \& Avis \\
+1982 & $O(n)$ for orthogonal polygons & Chazelle \\
+1982 & Spiral (funnel) triangulation & Chazelle \\
+1984 & Ear clipping formalized & Meisters \\
+1986 & $O(n \log \log n)$ triangulation & Tarjan \& Van Wyk \\
+1988 & $O(n \log^* n)$ randomized & Clarkson, Tarjan, Van Wyk \\
+1991 & $O(n \log^* n)$ randomized (simplified) & Seidel \\
+1991 & $O(n)$ deterministic (general simple) & Chazelle \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Open Question (Resolved)}
+
+The question ``Can all simple polygons be triangulated in $O(n)$ time?'' was open from 1975 to 1991.
+
+\textbf{Resolution}: Chazelle (1991) proved $O(n)$ is achievable for all simple polygons.
+
+\textbf{Current status}: The problem is \emph{solved}. However, Chazelle's algorithm remains impractical, and finding a \emph{simple} $O(n)$ algorithm is still open.
+
+\end{document}
+

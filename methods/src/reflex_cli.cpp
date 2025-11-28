@@ -1,5 +1,7 @@
 /**
- * CLI for Reflex Chord Triangulation (Paper Algorithm)
+ * CLI for Reflex Triangulation with Spatial Hash
+ * 
+ * Uses reflex-only spatial hashing for O(n) expected ear clipping.
  */
 
 #include <iostream>
@@ -9,7 +11,7 @@
 #include <chrono>
 #include <cstring>
 
-#include "reflex_chord.hpp"
+#include "reflex_triangulation.hpp"
 
 void print_usage(const char* prog) {
     std::cerr << "Usage: " << prog << " --input <polygon.poly> --output <output.tri>\n";
@@ -41,7 +43,7 @@ int main(int argc, char* argv[]) {
     int n;
     fin >> n;
     
-    std::vector<reflex_chord::Point> polygon(n);
+    std::vector<reflex::Point> polygon(n);
     for (int i = 0; i < n; i++) {
         fin >> polygon[i].x >> polygon[i].y;
         polygon[i].index = i;
@@ -49,13 +51,16 @@ int main(int argc, char* argv[]) {
     fin.close();
     
     // Triangulate
-    reflex_chord::ReflexChordTriangulator triangulator;
+    reflex::ReflexTriangulator triangulator;
     
     auto start = std::chrono::high_resolution_clock::now();
-    auto triangles = triangulator.triangulate(polygon);
+    triangulator.triangulate(polygon);
     auto end = std::chrono::high_resolution_clock::now();
     
     double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
+    
+    const auto& triangles = triangulator.triangles;
+    int num_reflex = triangulator.num_reflex;
     
     // Write output
     std::ofstream fout(output_file);
@@ -78,10 +83,9 @@ int main(int argc, char* argv[]) {
     fout.close();
     
     // Output in benchmark format
-    // Note: reflex count not exposed in this simplified class, putting 0
     std::cout << "reflex,vertices=" << n 
               << ",triangles=" << triangles.size()
-              << ",reflex_count=0" 
+              << ",reflex_count=" << num_reflex
               << ",time_ms=" << elapsed_ms << "\n";
     
     return 0;
