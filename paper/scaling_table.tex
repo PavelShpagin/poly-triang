@@ -1,0 +1,16 @@
+% Auto-generated scaling analysis table
+\begin{table}[htbp]
+\centering
+\caption{Empirical Scaling Law Analysis: $T = a \cdot n^b$}
+\label{tab:scaling}
+\begin{tabular}{lcccc}
+\toprule
+Algorithm & Theoretical & Empirical $b$ & Coefficient $a$ & $R^2$ \\
+\midrule
+Ear Clipping naive & $O(n^2)$, $b=2$ & 1.806 & 9.48e-04 & 0.9960 \\
+Earcut (optimized C++) & Optimized C++ & 1.296 & 9.42e-05 & 0.9679 \\
+Garey & $O(n \log n)$, $b \approx 1$ & 1.710 & 1.37e-03 & 0.9890 \\
+Hertel-Mehlhorn & $O(n + r \log r)$ & 1.842 & 1.01e-03 & 0.9943 \\
+\bottomrule
+\end{tabular}
+\end{table}
