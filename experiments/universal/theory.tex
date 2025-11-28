@@ -295,7 +295,7 @@ For each class $C_i$, membership can be tested in $O(n)$ time:
 We can now state a \emph{meta-algorithm} that selects the optimal specialized algorithm:
 
 \begin{algorithm}[H]
-\caption{Universal Polygon Triangulation}
+\caption{Universal Polygon Triangulation (Practical)}
 \begin{algorithmic}[1]
 \Procedure{UniversalTriangulate}{$P$}
     \If{\Call{IsConvex}{$P$}} \Comment{$O(n)$ check}
@@ -308,34 +308,47 @@ We can now state a \emph{meta-algorithm} that selects the optimal specialized al
     \ElsIf{\Call{IsOrthogonal}{$P$}}
         \State \Return \Call{OrthogonalTriangulate}{$P$} \Comment{$O(n)$}
     \Else
-        \State \Return \Call{ChazelleTriangulate}{$P$} \Comment{$O(n)$ fallback}
+        \State \Comment{Fallback: decompose into monotone pieces}
+        \State $pieces \gets$ \Call{MonotoneDecompose}{$P$} \Comment{$O(n \log n)$}
+        \State $triangles \gets []$
+        \For{each $piece$ in $pieces$}
+            \State $triangles.\text{extend}($\Call{MonotoneTriangulate}{$piece$}$)$
+        \EndFor
+        \State \Return $triangles$ \Comment{$O(n)$ total for triangulation}
     \EndIf
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
 
-\textbf{Complexity}: Each check is $O(n)$, and at most $k$ checks are performed. Total: $O(kn) = O(n)$ since $k$ is constant.
+\textbf{Complexity}: 
+\begin{itemize}
+    \item Structured polygons: $O(kn) = O(n)$ for detection + $O(n)$ for triangulation = $O(n)$.
+    \item Unstructured polygons: $O(n)$ for detection + $O(n \log n)$ for decomposition + $O(n)$ for triangulation = $O(n \log n)$.
+\end{itemize}
 
 \section{Completeness Proof}
 
-\begin{theorem}[Completeness]
-The taxonomy $\mathcal{C}$ is \emph{complete}: every simple polygon $P$ with $n$ vertices can be triangulated in $O(n)$ time.
+\begin{theorem}[Practical Completeness]
+The taxonomy $\mathcal{C} = \{C_1, \ldots, C_6\}$ combined with monotone decomposition is \emph{complete}: every simple polygon $P$ with $n$ vertices can be triangulated in $O(n \log n)$ time using simple, implementable algorithms. For structured polygons (the common case), the complexity is $O(n)$.
 \end{theorem}
 
 \begin{proof}
-By Theorem~\ref{thm:universal}, every simple polygon belongs to at least class $C_7$ (general simple polygons). Chazelle's algorithm \cite{chazelle1991} triangulates any simple polygon in $O(n)$ deterministic time.
+Case 1: If $P \in \bigcup_{i=1}^{6} C_i$, apply the corresponding $O(n)$ algorithm from Theorem~\ref{thm:universal}.
 
-The algorithm uses the following structure:
+Case 2: If $P \notin \bigcup_{i=1}^{6} C_i$, apply monotone decomposition (Theorem~\ref{thm:decomp}):
 \begin{enumerate}
-    \item Compute a trapezoidal decomposition of the polygon in $O(n)$ time.
-    \item This decomposes $P$ into $O(n)$ monotone mountains.
-    \item Triangulate each mountain in $O(1)$ amortized time per triangle.
+    \item Decompose $P$ into y-monotone pieces in $O(n \log n)$.
+    \item Triangulate each piece in $O(n)$ total.
 \end{enumerate}
 
-The key insight is that the trapezoidal decomposition can be computed without sorting by using \emph{polygon cutting} with a carefully constructed hierarchy of separators.
-
-Total complexity: $O(n)$.
+Both cases produce a valid triangulation. The complexity is $O(n)$ for Case 1 and $O(n \log n)$ for Case 2.
 \end{proof}
+
+\begin{theorem}[Near-Linear Alternative]
+Using Seidel's randomized algorithm, any simple polygon can be triangulated in $O(n \log^* n)$ expected time, where $\log^* n \leq 5$ for all $n < 2^{65536}$.
+\end{theorem}
+
+This is effectively $O(n)$ for all practical purposes, as $\log^* n$ is an extremely slowly growing function.
 
 \section{Summary of Algorithms by Class}
 
@@ -363,22 +376,41 @@ General & Seidel randomized & $O(n \log^* n)$ & Moderate & Seidel (1991) \\
 
 \section{Discussion}
 
-\subsection{Practical Implications}
+\subsection{Why We Exclude Chazelle}
 
-While Chazelle's algorithm is theoretically optimal, it is notoriously complex to implement (the original paper is 53 pages). In practice:
+Chazelle's 1991 algorithm achieves the theoretical optimum of $O(n)$ for all simple polygons. However:
 
 \begin{itemize}
-    \item \textbf{Convex detection} is trivial and fan triangulation is optimal.
-    \item \textbf{Monotone decomposition} (via plane sweep) gives $O(n \log n)$ with simple code.
-    \item \textbf{Seidel's randomized algorithm} gives expected $O(n \log^* n)$, practically linear.
-    \item \textbf{Ear clipping} is $O(n^2)$ worst-case but simple and fast for small $n$.
+    \item The paper spans 53 pages with intricate constructions.
+    \item No practical implementation exists after 30+ years.
+    \item The algorithm is considered ``galactic''---theoretically beautiful but practically useless.
+    \item Hidden constants are enormous.
 \end{itemize}
+
+Our approach trades theoretical optimality for \textbf{practical implementability}.
+
+\subsection{The Practical Complexity Landscape}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Algorithm} & \textbf{Complexity} & \textbf{Lines of Code} \\
+\midrule
+Fan (convex) & $O(n)$ & $\sim$10 \\
+Kernel (star-shaped) & $O(n)$ & $\sim$50 \\
+Stack (monotone) & $O(n)$ & $\sim$100 \\
+Monotone decomposition & $O(n \log n)$ & $\sim$300 \\
+Seidel randomized & $O(n \log^* n)$ & $\sim$500 \\
+Chazelle & $O(n)$ & Never implemented \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \subsection{The Constant $k$}
 
-In our taxonomy, $k = 7$ classes. The meta-algorithm performs at most $k$ class detection tests, each in $O(n)$, for a total of $O(7n) = O(n)$.
+In our taxonomy, $k = 6$ structured classes. The meta-algorithm performs at most $k$ class detection tests, each in $O(n)$, for a total of $O(6n) = O(n)$.
 
-However, in practice:
+In practice:
 \begin{itemize}
     \item Most tests can be combined (convexity check during monotonicity check).
     \item Early termination on first match reduces average-case checks.
@@ -387,16 +419,27 @@ However, in practice:
 
 \section{Conclusion}
 
-We have established the \textbf{Universality Theorem}: the space of all simple polygons is covered by a finite taxonomy of $k$ classes, each admitting $O(n)$ triangulation. This theorem was ultimately proved by Chazelle (1991), but we showed that:
+We have established the \textbf{Practical Universality Theorem}: 
 
 \begin{enumerate}
-    \item Specialized $O(n)$ algorithms existed for structured polygon classes since the late 1970s.
-    \item These classes cover the majority of practical polygon inputs.
-    \item A meta-algorithm can select the optimal specialized algorithm in $O(n)$ time.
-    \item The combined complexity is $O(kn) = O(n)$ since $k$ is a fixed constant.
+    \item A finite taxonomy of $k = 6$ \textbf{structured polygon classes} exists, each with a simple, implementable $O(n)$ triangulation algorithm.
+    \item These structured classes (convex, star-shaped, monotone, orthogonal, spiral, edge-visible) cover the \textbf{vast majority of practical polygon inputs}.
+    \item For the \textbf{unstructured remainder}, monotone decomposition provides $O(n \log n)$ triangulation, or Seidel's algorithm provides $O(n \log^* n) \approx O(n)$.
+    \item A meta-algorithm can detect polygon class in $O(n)$ and dispatch to the optimal algorithm.
 \end{enumerate}
 
-This universality result confirms that linear-time polygon triangulation is not just theoretically possible, but practically achievable through a portfolio of specialized algorithms matched to polygon structure.
+\textbf{Key insight}: We do \emph{not} need Chazelle's impractical $O(n)$ algorithm. The combination of:
+\begin{itemize}
+    \item Specialized $O(n)$ algorithms for structured classes
+    \item $O(n \log n)$ monotone decomposition for the general case
+\end{itemize}
+provides a \textbf{complete, practical solution} for all simple polygons.
+
+For structured polygons (the common case): $O(n)$.
+
+For unstructured polygons (rare): $O(n \log n)$ or $O(n \log^* n)$.
+
+This practical universality result confirms that efficient polygon triangulation is achievable through a portfolio of simple algorithms matched to polygon structure---no ``galactic'' algorithms required.
 
 \begin{thebibliography}{99}
 

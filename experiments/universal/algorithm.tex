@@ -296,10 +296,11 @@ This approach yields practical benefits:
 
 \subsection{Fallback Options for GeneralTriangulate}
 
+We deliberately exclude Chazelle's $O(n)$ algorithm due to implementation infeasibility (53 pages, never implemented). Practical fallbacks:
+
 \begin{enumerate}
-    \item \textbf{Chazelle (1991)}: $O(n)$ deterministic, but extremely complex.
-    \item \textbf{Seidel (1991)}: $O(n \log^* n)$ randomized, simple implementation.
-    \item \textbf{Monotone Decomposition}: $O(n \log n)$ via plane sweep, then $O(n)$ triangulation.
+    \item \textbf{Monotone Decomposition}: $O(n \log n)$ via plane sweep, then $O(n)$ triangulation. \textbf{Recommended}.
+    \item \textbf{Seidel (1991)}: $O(n \log^* n)$ randomized, moderate implementation complexity.
     \item \textbf{Ear Clipping}: $O(n^2)$ worst case, but simple and fast for moderate $n$.
     \item \textbf{Reflex-Aware Ear Clipping}: $O(n)$ expected for uniform distributions (our contribution).
 \end{enumerate}

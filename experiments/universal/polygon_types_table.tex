@@ -68,7 +68,13 @@ The following table catalogs all known polygon classes that admit $O(n)$ triangu
 
 \textbf{Unimodal} & Boundary can be split into two chains: one increasing, one decreasing & Equivalent to monotone & 1978 & Garey et al. \\
 
-\textbf{Simple (General)} & Non-self-intersecting boundary & Trapezoidalization with polygon cutting & 1991 & Chazelle \\
+\midrule
+\multicolumn{5}{c}{\textit{Fallback for unstructured polygons (not O(n) but practical)}} \\
+\midrule
+
+\textbf{Simple (General)} & Non-self-intersecting boundary & Monotone decomposition + triangulation & 1978 & Garey et al. \\
+
+\textbf{Simple (General)} & Non-self-intersecting boundary & Seidel randomized trapezoidalization & 1991 & Seidel \\
 
 \end{longtable}
 \end{center}
@@ -203,32 +209,38 @@ Near-convex (few reflex) & Reflex-aware ear clipping (this project) \\
 \section{Historical Timeline}
 
 \begin{center}
-\begin{tabular}{lll}
+\begin{tabular}{llll}
 \toprule
-\textbf{Year} & \textbf{Result} & \textbf{Authors} \\
+\textbf{Year} & \textbf{Result} & \textbf{Authors} & \textbf{Practical?} \\
 \midrule
-1975 & Kernel computation for star-shaped & Shamos \\
-1978 & $O(n)$ for monotone polygons & Garey, Johnson, Preparata, Tarjan \\
-1978 & $O(n \log n)$ decomposition into monotone & Garey et al. \\
-1981 & $O(n)$ for edge-visible polygons & ElGindy \& Avis \\
-1982 & $O(n)$ for orthogonal polygons & Chazelle \\
-1982 & Spiral (funnel) triangulation & Chazelle \\
-1984 & Ear clipping formalized & Meisters \\
-1986 & $O(n \log \log n)$ triangulation & Tarjan \& Van Wyk \\
-1988 & $O(n \log^* n)$ randomized & Clarkson, Tarjan, Van Wyk \\
-1991 & $O(n \log^* n)$ randomized (simplified) & Seidel \\
-1991 & $O(n)$ deterministic (general simple) & Chazelle \\
+1975 & Kernel computation for star-shaped & Shamos & Yes \\
+1978 & $O(n)$ for monotone polygons & Garey et al. & Yes \\
+1978 & $O(n \log n)$ decomposition into monotone & Garey et al. & Yes \\
+1981 & $O(n)$ for edge-visible polygons & ElGindy \& Avis & Yes \\
+1982 & $O(n)$ for orthogonal polygons & Chazelle & Yes \\
+1982 & Spiral (funnel) triangulation & Chazelle & Yes \\
+1984 & Ear clipping formalized & Meisters & Yes \\
+1986 & $O(n \log \log n)$ triangulation & Tarjan \& Van Wyk & Moderate \\
+1988 & $O(n \log^* n)$ randomized & Clarkson et al. & Moderate \\
+1991 & $O(n \log^* n)$ randomized (simplified) & Seidel & Yes \\
+1991 & $O(n)$ deterministic (general simple) & Chazelle & \textbf{No} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\section{Open Question (Resolved)}
+\section{Open Question}
 
-The question ``Can all simple polygons be triangulated in $O(n)$ time?'' was open from 1975 to 1991.
+The question ``Can all simple polygons be triangulated in $O(n)$ time using a \textbf{simple, implementable} algorithm?'' remains open.
 
-\textbf{Resolution}: Chazelle (1991) proved $O(n)$ is achievable for all simple polygons.
+\textbf{Theoretical status}: Chazelle (1991) proved $O(n)$ is achievable, but the algorithm is impractical (53 pages, never implemented, ``galactic'').
 
-\textbf{Current status}: The problem is \emph{solved}. However, Chazelle's algorithm remains impractical, and finding a \emph{simple} $O(n)$ algorithm is still open.
+\textbf{Practical status}: 
+\begin{itemize}
+    \item Structured classes (convex, monotone, star-shaped, etc.): $O(n)$ with simple algorithms.
+    \item Unstructured polygons: $O(n \log n)$ via monotone decomposition, or $O(n \log^* n)$ via Seidel.
+\end{itemize}
+
+\textbf{Our contribution}: The structured classes cover the vast majority of practical inputs, so the gap between $O(n)$ and $O(n \log n)$ is rarely encountered.
 
 \end{document}
 
