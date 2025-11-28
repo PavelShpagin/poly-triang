@@ -13,8 +13,11 @@ include_directories(include)
 # Reflex triangulation CLI
 add_executable(reflex_cli src/reflex_cli.cpp)
 
+# Bucket triangulation CLI
+add_executable(bucket_cli src/bucket_cli.cpp)
+
 # Set output directory
-set_target_properties(reflex_cli PROPERTIES
+set_target_properties(reflex_cli bucket_cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 

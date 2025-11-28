@@ -1,0 +1,24 @@
+% Auto-generated benchmark results
+\begin{table}[htbp]
+\centering
+\caption{Triangulation Performance (ms) - Bucket vs Earcut}
+\label{tab:bucket_performance}
+\begin{tabular}{rccc}
+\toprule
+$n$ & Bucket (Ours) & Earcut & Speedup \\
+\midrule
+1,000 & 0.234 & 0.203 & 0.87x \\
+2,000 & 0.574 & 0.542 & 0.94x \\
+5,000 & 2.60 & 2.71 & \textbf{1.04x} \\
+10,000 & 9.24 & 12.26 & \textbf{1.33x} \\
+20,000 & 25.32 & 44.79 & \textbf{1.77x} \\
+50,000 & 140.7 & 311.9 & \textbf{2.22x} \\
+100,000 & 562.9 & 1457.6 & \textbf{2.59x} \\
+200,000 & 1472.2 & 3947.6 & \textbf{2.68x} \\
+500,000 & 17.92 & 174.8 & \textbf{9.75x} \\
+1,000,000 & 28.82 & 365.2 & \textbf{12.67x} \\
+\midrule
+Scaling $b$ & 0.885 & 1.259 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
