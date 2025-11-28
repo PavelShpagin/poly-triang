@@ -1,0 +1,23 @@
+Complexity Analysis: T = a * n^b
+============================================================
+
+Earcut (Mapbox C++):
+  T = 2.77e-05 * n^1.382
+  R^2 = 0.4065
+  Interpretation: Between O(n) and O(n log n)
+
+Reflex (Ours, C++):
+  T = 1.06e-04 * n^1.165
+  R^2 = 0.1445
+  Interpretation: Between O(n) and O(n log n)
+
+Naive O(n^2) (Python):
+  T = 2.71e-04 * n^1.908
+  R^2 = 0.9946
+  Interpretation: Near quadratic O(n^2)
+
+
+NOTE: The 'Reflex' algorithm shows high variance across polygon types.
+- Convex polygons: O(n) via fan triangulation
+- Non-convex: O(n * k) where k depends on spatial distribution
+- Worst case: O(n^2) for pathological inputs

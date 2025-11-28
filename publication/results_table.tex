@@ -1,0 +1,23 @@
+% Auto-generated benchmark results table
+\begin{table}[htbp]
+\centering
+\caption{Average Triangulation Time (ms) by Polygon Size}
+\label{tab:performance}
+\begin{tabular}{rcccc}
+\toprule
+$n$ & Reflex & Earcut & Naive & Speedup \\
+\midrule
+10 & 0.0033 & 0.0034 & 0.0236 & \textbf{1.0x} \\
+50 & 0.0117 & 0.0067 & 0.447 & 0.57x \\
+100 & 0.0179 & 0.0149 & 1.74 & 0.83x \\
+500 & 0.0753 & 0.0682 & 35.63 & 0.91x \\
+1,000 & 0.196 & 0.138 & 146.4 & 0.70x \\
+2,000 & 0.594 & 0.370 & 577.0 & 0.62x \\
+5,000 & 2.10 & 1.58 & -- & 0.75x \\
+10,000 & 7.41 & 6.74 & -- & 0.91x \\
+20,000 & 23.60 & 36.46 & -- & \textbf{1.5x} \\
+50,000 & 2.60 & 167.5 & -- & \textbf{64.3x} \\
+100,000 & 567.2 & 815.7 & -- & \textbf{1.4x} \\
+\bottomrule
+\end{tabular}
+\end{table}

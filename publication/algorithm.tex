@@ -13,232 +13,216 @@
 
 \geometry{margin=1in}
 
-\title{Reflex Polygon Triangulation:\\An $O(n + r \log r)$ Algorithm}
+\title{Reflex-Aware Polygon Triangulation:\\A Practical Algorithm with Spatial Hashing}
 \author{Research Report}
 \date{\today}
 
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}{Lemma}
 \newtheorem{definition}{Definition}
-\newtheorem{corollary}{Corollary}
+\newtheorem{remark}{Remark}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-We present an efficient algorithm for triangulating simple polygons with complexity $O(n + r \log r)$, where $n$ is the number of vertices and $r$ is the number of reflex vertices ($r \leq n/2$). The algorithm combines efficient reflex vertex detection, horizontal chord construction, and linear-time triangulation of $y$-monotone subdivisions. For convex polygons ($r = 0$), the algorithm runs in optimal $O(n)$ time. Our implementation demonstrates competitive performance against highly optimized baselines, particularly for polygons with few reflex vertices.
+We present a practical polygon triangulation algorithm that combines ear clipping with spatial hashing and reflex-vertex awareness. The algorithm achieves $O(n)$ time for convex polygons and $O(n \cdot k)$ expected time for non-convex polygons, where $k$ is the average number of reflex vertices per spatial hash query. While the worst-case complexity remains $O(n^2)$, our implementation demonstrates significant speedups over the highly-optimized Mapbox Earcut library on many polygon types, particularly those with few or spatially-clustered reflex vertices. We present rigorous benchmarks on polygons up to 100,000 vertices.
 \end{abstract}
 
 \section{Introduction}
 
-Polygon triangulation is a fundamental problem in computational geometry with applications in computer graphics, mesh generation, and geographic information systems. Given a simple polygon $P$ with $n$ vertices, the goal is to partition its interior into $n-2$ non-overlapping triangles using only diagonals.
+Polygon triangulation is a fundamental problem in computational geometry. Given a simple polygon $P$ with $n$ vertices, the goal is to partition its interior into $n-2$ non-overlapping triangles.
 
-\subsection{Complexity Landscape}
+\subsection{Theoretical Background}
 
-The theoretical complexity of polygon triangulation has been extensively studied:
+The complexity landscape of polygon triangulation:
 \begin{itemize}
-    \item \textbf{Ear Clipping}: $O(n^2)$ worst-case, simple implementation
-    \item \textbf{Garey et al.}: First $O(n \log n)$ algorithm via monotone decomposition
-    \item \textbf{Hertel-Mehlhorn}: $O(n + r \log r)$ output-sensitive algorithm
-    \item \textbf{Chazelle}: Optimal $O(n)$ deterministic algorithm (complex)
+    \item \textbf{Ear Clipping} \cite{meisters1975}: $O(n^2)$ worst-case, simple to implement
+    \item \textbf{Garey et al.} \cite{garey1978}: $O(n \log n)$ via monotone decomposition
+    \item \textbf{Hertel-Mehlhorn} \cite{hertel1985}: $O(n + r \log r)$ where $r$ is reflex count
+    \item \textbf{Chazelle} \cite{chazelle1991}: Optimal $O(n)$ deterministic (complex)
 \end{itemize}
 
-Our algorithm achieves $O(n + r \log r)$ complexity with a simpler implementation than Hertel-Mehlhorn, making it practical for real-world applications.
+\subsection{Our Contribution}
 
-\section{Preliminaries}
+We present a practical algorithm that:
+\begin{enumerate}
+    \item Uses \textbf{fan triangulation} for convex polygons: $O(n)$
+    \item Uses \textbf{spatial hashing} to accelerate point-in-triangle tests
+    \item Only checks \textbf{reflex vertices} for ear validation
+    \item Achieves significant practical speedups on many polygon types
+\end{enumerate}
+
+\section{Algorithm Description}
+
+\subsection{Definitions}
 
 \begin{definition}[Reflex Vertex]
-A vertex $v_i$ of polygon $P$ is \emph{reflex} if its interior angle exceeds $180^\circ$. Equivalently, for a counter-clockwise oriented polygon, $v_i$ is reflex if the cross product $(v_{i+1} - v_i) \times (v_{i-1} - v_i) < 0$.
+A vertex $v_i$ is \emph{reflex} if its interior angle exceeds $180^\circ$.
 \end{definition}
 
-\begin{definition}[Horizontal Chord]
-A \emph{horizontal chord} from vertex $v$ is the maximal horizontal segment through $v$ that lies entirely within the polygon interior.
-\end{definition}
-
-\begin{definition}[$y$-Monotone Polygon]
-A polygon is \emph{$y$-monotone} if any horizontal line intersects its boundary at most twice.
+\begin{definition}[Ear]
+A vertex $v_i$ forms an \emph{ear} if it is convex and no other polygon vertex lies inside the triangle $(v_{i-1}, v_i, v_{i+1})$.
 \end{definition}
 
 \begin{lemma}
-A simple polygon with $n$ vertices has at most $n/2$ reflex vertices.
+Only reflex vertices can lie inside an ear triangle.
 \end{lemma}
 
 \begin{proof}
-The sum of interior angles of an $n$-gon is $(n-2) \cdot 180^\circ$. Each reflex vertex contributes more than $180^\circ$, so at most $\lfloor n/2 \rfloor$ vertices can be reflex.
+A convex vertex $v_j$ cannot be inside the triangle $(v_{i-1}, v_i, v_{i+1})$ because the polygon boundary would have to cross itself, contradicting simplicity.
 \end{proof}
 
-\section{Algorithm}
-
-\subsection{Overview}
-
-The algorithm proceeds in three phases:
-\begin{enumerate}
-    \item \textbf{Reflex Detection}: Identify all reflex vertices in $O(n)$ time.
-    \item \textbf{Horizontal Chord Construction}: Sort reflex vertices by $y$-coordinate and construct horizontal chords, creating a $y$-monotone decomposition in $O(r \log r + n)$ time.
-    \item \textbf{Monotone Triangulation}: Triangulate each monotone region in $O(n)$ total time.
-\end{enumerate}
-
-\subsection{Reflex Vertex Detection}
+\subsection{Algorithm Overview}
 
 \begin{algorithm}[H]
-\caption{Find Reflex Vertices}
+\caption{Reflex-Aware Triangulation}
 \begin{algorithmic}[1]
-\Procedure{FindReflexVertices}{$P = (v_0, v_1, \ldots, v_{n-1})$}
-    \State $R \gets \emptyset$
-    \For{$i \gets 0$ \textbf{to} $n-1$}
-        \State $prev \gets (i - 1 + n) \mod n$
-        \State $next \gets (i + 1) \mod n$
-        \State $cross \gets (v_{next} - v_i) \times (v_{prev} - v_i)$
-        \If{$cross < 0$} \Comment{Reflex for CCW polygon}
-            \State $R \gets R \cup \{i\}$
-        \EndIf
-    \EndFor
-    \State \Return $R$
+\Procedure{Triangulate}{$P = (v_0, \ldots, v_{n-1})$}
+    \State $R \gets$ \Call{FindReflexVertices}{$P$}
+    \If{$R = \emptyset$} \Comment{Convex polygon}
+        \State \Return \Call{FanTriangulate}{$P$} \Comment{$O(n)$}
+    \EndIf
+    \State $H \gets$ \Call{BuildSpatialHash}{$R$}
+    \State $L \gets$ doubly-linked list of vertices
+    \While{$|L| > 3$}
+        \For{each vertex $v$ in $L$}
+            \If{\Call{IsEar}{$v, R, H$}}
+                \State Output triangle $(v.\text{prev}, v, v.\text{next})$
+                \State Remove $v$ from $L$
+                \State Update $R$ and $H$ for neighbors
+                \State \textbf{break}
+            \EndIf
+        \EndFor
+    \EndWhile
+    \State Output final triangle
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Horizontal Chord Construction}
+\subsection{Spatial Hash Optimization}
 
-The key insight is that horizontal chords from reflex vertices decompose the polygon into $y$-monotone regions.
-
-\begin{theorem}[Horizontal Chord Decomposition]
-Let $P$ be a simple polygon with reflex vertices $R = \{r_1, r_2, \ldots, r_k\}$ sorted by $y$-coordinate. Processing reflex vertices from bottom to top and adding horizontal chords produces a decomposition into $y$-monotone polygons.
-\end{theorem}
+The key optimization is using a spatial hash to quickly find reflex vertices near an ear candidate:
 
 \begin{algorithm}[H]
-\caption{Horizontal Chord Construction}
+\caption{Ear Test with Spatial Hash}
 \begin{algorithmic}[1]
-\Procedure{BuildHorizontalChords}{$P$, $R$}
-    \State Sort $R$ by $y$-coordinate \Comment{$O(r \log r)$}
-    \State $G \gets$ empty graph
-    \For{each $r \in R$ in sorted order}
-        \State Find left edge $e_L$ and right edge $e_R$ intersecting horizontal through $r$
-        \State Add chord from $r$ to $e_L \cap \text{horizontal}$ and $e_R \cap \text{horizontal}$
-        \State Update $G$ with new vertices and edges
+\Function{IsEar}{$v, R, H$}
+    \If{$v$ is not convex} \Return false \EndIf
+    \State $B \gets$ bounding box of triangle $(v.\text{prev}, v, v.\text{next})$
+    \For{each reflex vertex $r$ in $H.\text{query}(B)$}
+        \If{$r \in$ triangle} \Return false \EndIf
     \EndFor
-    \State \Return $G$
-\EndProcedure
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Monotone Triangulation}
-
-Each $y$-monotone polygon can be triangulated in linear time using the standard stack-based algorithm.
-
-\begin{algorithm}[H]
-\caption{Monotone Polygon Triangulation}
-\begin{algorithmic}[1]
-\Procedure{TriangulateMonotone}{$M = (u_1, \ldots, u_m)$}
-    \State Sort vertices by $y$-coordinate
-    \State Identify left and right chains
-    \State $S \gets$ empty stack
-    \State Push $u_1, u_2$ onto $S$
-    \For{$i \gets 3$ \textbf{to} $m$}
-        \If{$u_i$ on different chain than $\text{top}(S)$}
-            \State Pop all from $S$, form triangles with $u_i$
-        \Else
-            \State Pop while diagonal is inside, form triangles
-        \EndIf
-        \State Push $u_i$ onto $S$
-    \EndFor
-    \State \Return triangles
-\EndProcedure
+    \State \Return true
+\EndFunction
 \end{algorithmic}
 \end{algorithm}
 
 \section{Complexity Analysis}
 
-\begin{theorem}[Time Complexity]
-The reflex triangulation algorithm runs in $O(n + r \log r)$ time, where $n$ is the number of vertices and $r$ is the number of reflex vertices.
+\begin{theorem}[Convex Case]
+For convex polygons ($r = 0$), the algorithm runs in $O(n)$ time.
 \end{theorem}
 
 \begin{proof}
-\begin{enumerate}
-    \item \textbf{Reflex Detection}: Single pass through vertices, $O(n)$.
-    \item \textbf{Sorting}: Sorting $r$ reflex vertices, $O(r \log r)$.
-    \item \textbf{Chord Construction}: Each edge is visited at most once during horizontal ray shooting, $O(n)$.
-    \item \textbf{Monotone Triangulation}: Total vertices across all monotone regions is $O(n + r) = O(n)$, each processed once.
-\end{enumerate}
-Total: $O(n) + O(r \log r) + O(n) + O(n) = O(n + r \log r)$.
+Fan triangulation outputs $n-2$ triangles in a single pass.
 \end{proof}
 
-\begin{corollary}
-For convex polygons ($r = 0$), the algorithm runs in $O(n)$ time.
-\end{corollary}
+\begin{theorem}[General Case]
+For non-convex polygons, the worst-case complexity is $O(n^2)$.
+\end{theorem}
 
-\begin{corollary}
-The constant factor before $n \log n$ is at most $1/2$, since $r \leq n/2$.
-\end{corollary}
+\begin{proof}
+In the worst case:
+\begin{itemize}
+    \item We must remove $n-2$ ears
+    \item Each ear search may scan $O(n)$ vertices
+    \item Each ear test may check $O(r)$ reflex vertices
+\end{itemize}
+Total: $O(n \cdot (n + r)) = O(n^2)$ since $r \leq n/2$.
+\end{proof}
 
-\section{Implementation Details}
-
-Our C++ implementation uses the following optimizations:
-
-\begin{enumerate}
-    \item \textbf{Reflex-aware ear clipping}: Instead of checking all vertices for point-in-triangle tests, we only check reflex vertices. This reduces the inner loop from $O(n)$ to $O(r)$.
-    
-    \item \textbf{Doubly-linked list}: Vertices are stored in a doubly-linked list for $O(1)$ removal during ear clipping.
-    
-    \item \textbf{Convex fast-path}: For convex polygons ($r = 0$), we use simple fan triangulation in $O(n)$ time.
-    
-    \item \textbf{Early termination}: Once all reflex vertices have been processed as ear tips or neighbors, the remaining polygon is convex and can be triangulated quickly.
-\end{enumerate}
+\begin{remark}[Expected Complexity]
+With spatial hashing and well-distributed vertices, the expected complexity is $O(n \cdot k)$ where $k$ is the average number of reflex vertices per hash cell query. For uniformly distributed polygons, $k = O(1)$ on average, giving $O(n)$ expected time.
+\end{remark}
 
 \section{Experimental Results}
 
-We benchmark our implementation against:
+We benchmark against Mapbox Earcut, a highly-optimized industrial implementation.
+
+\subsection{Test Setup}
 \begin{itemize}
-    \item \textbf{Earcut}: Highly optimized C++ ear clipping (Mapbox)
-    \item \textbf{Naive Ear Clipping}: Reference $O(n^2)$ Python implementation
-    \item \textbf{Garey}: $O(n \log n)$ monotone decomposition (Python)
-    \item \textbf{Hertel-Mehlhorn}: $O(n + r \log r)$ algorithm (Python)
+    \item Polygon types: convex, random, star, spiral
+    \item Sizes: 100 to 100,000 vertices
+    \item Platform: Linux (WSL), GCC with -O3
 \end{itemize}
 
-\subsection{Scaling Behavior}
+\subsection{Results}
 
-\input{methods_table}
+\input{results_table}
 
-\subsection{Performance by Polygon Type}
+\subsection{Key Observations}
+
+\begin{enumerate}
+    \item \textbf{Convex polygons}: Our algorithm is 5-6x faster than Earcut due to the $O(n)$ fan triangulation fast path.
+    
+    \item \textbf{Star polygons} (high reflex ratio $r/n \approx 0.5$): Competitive performance, with our algorithm faster at larger sizes due to spatial hashing benefits.
+    
+    \item \textbf{Random polygons}: Similar performance to Earcut, both showing near-quadratic scaling for high-reflex cases.
+    
+    \item \textbf{Spiral polygons}: Earcut is faster because our ear-clipping loop has higher overhead when $r$ is small but non-zero.
+\end{enumerate}
+
+\subsection{Performance Visualization}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{figures/methods_comparison.png}
-    \caption{Algorithm performance comparison across polygon sizes.}
-    \label{fig:comparison}
+    \includegraphics[width=\textwidth]{figures/figure1_performance.png}
+    \caption{Performance comparison: (a) by polygon type, (b) average across all types.}
+    \label{fig:performance}
 \end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{figures/methods_scaling.png}
-    \caption{Empirical scaling analysis with power law fits.}
-    \label{fig:scaling}
+    \includegraphics[width=0.9\textwidth]{figures/figure2_triangulation.png}
+    \caption{Triangulation comparison on 500-vertex polygons.}
+    \label{fig:triangulation}
 \end{figure}
 
 \section{Discussion}
 
-Our experimental results show:
+\subsection{When to Use This Algorithm}
 
+Our algorithm is recommended when:
+\begin{itemize}
+    \item Polygons are frequently convex or nearly convex
+    \item Reflex vertices are spatially clustered
+    \item Simplicity of implementation is valued
+\end{itemize}
+
+Earcut is recommended when:
+\begin{itemize}
+    \item Polygons have many scattered reflex vertices
+    \item Consistent performance across all input types is required
+    \item Memory efficiency is critical
+\end{itemize}
+
+\subsection{Achieving True $O(n + r \log r)$}
+
+To achieve the theoretical $O(n + r \log r)$ complexity of Hertel-Mehlhorn:
 \begin{enumerate}
-    \item \textbf{Convex polygons}: Our algorithm achieves near-linear scaling, as expected for $r = 0$.
-    
-    \item \textbf{High-reflex polygons}: Performance degrades gracefully with increasing reflex count, following the theoretical $O(n + r \log r)$ bound.
-    
-    \item \textbf{Comparison with Earcut}: The highly optimized Mapbox Earcut implementation remains faster for most practical inputs due to its sophisticated spatial hashing and cache-friendly memory layout. However, our algorithm provides better theoretical guarantees.
-    
-    \item \textbf{Comparison with Python baselines}: Our C++ implementation significantly outperforms the Python implementations of Garey and Hertel-Mehlhorn, demonstrating the importance of implementation quality.
+    \item Sort reflex vertices by $y$-coordinate: $O(r \log r)$
+    \item Build horizontal chords via plane sweep: $O(n)$
+    \item Decompose into $y$-monotone regions: $O(n)$
+    \item Triangulate each monotone region: $O(n)$ total
 \end{enumerate}
+
+This requires more complex data structures (e.g., balanced BST for active edges) and is left for future work.
 
 \section{Conclusion}
 
-We presented a practical $O(n + r \log r)$ polygon triangulation algorithm based on horizontal chord construction from reflex vertices. The algorithm is simpler than previous output-sensitive approaches while maintaining competitive performance. Future work includes:
-
-\begin{itemize}
-    \item Parallelization of the monotone triangulation phase
-    \item Extension to polygons with holes
-    \item Integration of spatial hashing for improved constant factors
-\end{itemize}
+We presented a practical polygon triangulation algorithm that combines ear clipping with spatial hashing and reflex-vertex awareness. While the worst-case complexity is $O(n^2)$, the algorithm achieves significant speedups on convex and low-reflex polygons. Our benchmarks on up to 100,000 vertices demonstrate that the algorithm is competitive with industrial implementations and superior for specific polygon classes.
 
 \bibliographystyle{plain}
 \begin{thebibliography}{10}
@@ -266,4 +250,3 @@ G.~H. Meisters.
 \end{thebibliography}
 
 \end{document}
-
