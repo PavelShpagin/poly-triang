@@ -12,3 +12,4 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(baselines)
+add_subdirectory(methods)
