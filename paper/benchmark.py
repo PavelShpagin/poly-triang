@@ -162,7 +162,7 @@ def fmt_pm(mean: Optional[float], std: Optional[float]) -> str:
         return "--"
     if std is None:
         return f"{mean:.2f}"
-    return f"{mean:.2f} \\pm {std:.2f}"
+    return f"{mean:.2f} $\\pm$ {std:.2f}"
 
 def write_tex_tables(summary: Dict[Tuple[str, int], dict], sizes: List[int], polygon_types: List[str]) -> None:
     OUT_DIR.mkdir(exist_ok=True)
