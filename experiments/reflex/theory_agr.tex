@@ -1,0 +1,87 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\title{Randomized Linear-Time Polygon Triangulation\\(Adapting Amato-Goodrich-Ramos)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We present a randomized algorithm for triangulating a simple polygon with $n$ vertices. The algorithm runs in $O(n)$ expected time. It is based on the "Divide-and-Conquer" approach of Amato, Goodrich, and Ramos \cite{amato2000}, which simplifies the sampling strategy of Seidel's algorithm \cite{seidel1991} and avoids the complexity of Chazelle's deterministic method \cite{chazelle1991}. By sampling a small subset of vertices to form a coarse decomposition (trapezoidal map) and "tracing" the polygon boundary through it, we reduce the problem to independent sub-problems of small total expected size.
+\end{abstract}
+
+\section{Introduction}
+
+The history of polygon triangulation is marked by a trade-off between theoretical optimality and practical simplicity.
+\begin{itemize}
+    \item \textbf{Chazelle (1991)}: $O(n)$ deterministic. Extremely complex.
+    \item \textbf{Seidel (1991)}: $O(n \log^* n)$ expected. Randomized Incremental. Moderate complexity.
+    \item \textbf{Amato et al. (2000)}: $O(n)$ expected. Randomized Divide \& Conquer. Simpler than Chazelle.
+\end{itemize}
+
+We describe the Amato-Goodrich-Ramos (AGR) approach as the "Holy Grail" of practical linear-time triangulation.
+
+\section{The Algorithm}
+
+The core insight is to replace the incremental updates of Seidel (which require a DAG or complex history) with a batch Divide-and-Conquer strategy.
+
+\begin{algorithm}
+\caption{AGR Triangulation}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Simple polygon $P$ with $n$ edges.
+\State \textbf{Base Case:} If $n < C$, triangulate using Ear Clipping ($O(1)$).
+\State \textbf{Step 1: Sample}
+\State Pick a random sample $S \subset P$ of size $s = n^\epsilon$ (e.g., $\sqrt{n}$).
+\State \textbf{Step 2: Coarse Decomposition}
+\State Build the Trapezoidal Map $T(S)$ of the sample.
+\State Time: $O(s \log s) \ll O(n)$.
+\State \textbf{Step 3: Trace}
+\State Trace the boundary of $P$ through $T(S)$.
+\State Insert the edges of $P$ into the trapezoids of $T(S)$.
+\State Since $P$ is a connected chain, we can walk from one trapezoid to the next in $O(1)$ amortized time (plus intersection costs).
+\State \textbf{Step 4: Recurse}
+\State The tracing step partitions $P$ into sub-polygons $P_1, \dots, P_k$ inside the trapezoids.
+\State Recursively triangulate each $P_i$.
+\end{algorithmic}
+\end{algorithm}
+
+\section{Theoretical Analysis}
+
+\begin{theorem}
+The expected running time of the algorithm is $O(n)$.
+\end{theorem}
+
+\begin{proof}[Proof Sketch]
+Let $T(n)$ be the expected running time.
+\begin{enumerate}
+    \item \textbf{Sampling \& Map Construction}: Takes $O(s \log s)$. With $s = n^{1/2}$, this is $O(n)$.
+    \item \textbf{Tracing}: The time to trace $P$ through $T(S)$ is proportional to $n$ plus the number of intersections between $P$ and the vertical extensions of $S$. By standard $\epsilon$-net theory (or random sampling properties), the expected number of intersections is $O(n)$.
+    \item \textbf{Recursion}: The sum of the sizes of the sub-polygons is $\sum |P_i| = n + O(n) = O(n)$. The maximum size of a sub-problem is expected to be $O(n/s \cdot \log n)$.
+\end{enumerate}
+The recurrence relation is roughly $T(n) = O(n) + \sum T(n_i)$. Since $\sum n_i = O(n)$ and the problem size decays rapidly, the solution is $T(n) = O(n)$.
+\end{proof}
+
+\section{Comparison to Splay Sweep}
+
+The Randomized Splay Sweep we investigated earlier is $O(n)$ for "most" inputs but theoretically $O(n \log n)$ in the worst case (though rotation mitigates this).
+The AGR algorithm is **theoretically $O(n)$ expected** for *all* inputs, making it the rigorous choice.
+
+\begin{thebibliography}{9}
+\bibitem{amato2000} N. M. Amato, M. T. Goodrich, E. A. Ramos, "Linear-time triangulation of a simple polygon made easier via randomization", SoCG 2000.
+\bibitem{seidel1991} R. Seidel, "A simple and fast incremental randomized algorithm...", CGTA 1991.
+\end{thebibliography}
+
+\end{document}
+

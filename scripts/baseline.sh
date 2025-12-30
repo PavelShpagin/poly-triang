@@ -18,8 +18,8 @@ echo "[1/5] Generating polygons..."
 python3 "${SCRIPTS_DIR}/generate_polygons.py" --output "${POLY_DIR}"
 
 echo "[2/5] Configuring and building C++ baselines..."
-cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1
-cmake --build "${BUILD_DIR}" --target earcut_cli >/dev/null 2>&1 || true
+cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
+cmake --build "${BUILD_DIR}" --target earcut_cli seidel_cli polypartition_mono_cli polypartition_hm_cli reflex_cli polytri_cli
 
 echo "[3/5] Running benchmarks..."
 BENCH_CSV="${RESULTS_DIR}/benchmark_results.csv"
@@ -45,14 +45,8 @@ run_garey() {
   local name="$2"
   local num_vertices="$3"
   
-  # Skip for very large polygons (too slow in Python)
-  if [ "${num_vertices}" -gt 10000 ]; then
-    printf "  %-12s %-20s %6s verts  SKIPPED (too slow)\n" "Garey" "${name}" "${num_vertices}"
-    return
-  fi
-  
   local output="${RESULTS_DIR}/garey_${name}.tri"
-  if log="$(python3 "${SCRIPTS_DIR}/run_garey.py" --input "${poly}" --output "${output}" 2>&1)"; then
+  if log="$("${BIN_DIR}/polypartition_mono_cli" --input "${poly}" --output "${output}" 2>&1)"; then
     time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
     echo "garey,${name},${num_vertices},${time_ms}" >> "${BENCH_CSV}"
     printf "  %-12s %-20s %6s verts  %10s ms\n" "Garey" "${name}" "${num_vertices}" "${time_ms}"
@@ -66,19 +60,43 @@ run_hertel() {
   local name="$2"
   local num_vertices="$3"
   
-  # Skip for very large polygons (too slow)
-  if [ "${num_vertices}" -gt 10000 ]; then
-    printf "  %-12s %-20s %6s verts  SKIPPED (too slow)\n" "Hertel" "${name}" "${num_vertices}"
-    return
-  fi
-  
   local output="${RESULTS_DIR}/hertel_${name}.tri"
-  if log="$(python3 "${SCRIPTS_DIR}/run_hertel.py" --input "${poly}" --output "${output}" 2>&1)"; then
+  if log="$("${BIN_DIR}/polypartition_hm_cli" --input "${poly}" --output "${output}" 2>&1)"; then
     time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
     echo "hertel,${name},${num_vertices},${time_ms}" >> "${BENCH_CSV}"
     printf "  %-12s %-20s %6s verts  %10s ms\n" "Hertel" "${name}" "${num_vertices}" "${time_ms}"
   else
     printf "  %-12s %-20s FAILED\n" "Hertel" "${name}"
+  fi
+}
+
+run_reflex() {
+  local poly="$1"
+  local name="$2"
+  local num_vertices="$3"
+
+  local output="${RESULTS_DIR}/reflex_${name}.tri"
+  if [ -x "${BIN_DIR}/reflex_cli" ]; then
+    if log="$("${BIN_DIR}/reflex_cli" --input "${poly}" --output "${output}" 2>&1)"; then
+      time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
+      echo "reflex,${name},${num_vertices},${time_ms}" >> "${BENCH_CSV}"
+      printf "  %-12s %-20s %6s verts  %10s ms\n" "Reflex" "${name}" "${num_vertices}" "${time_ms}"
+    fi
+  fi
+}
+
+run_seidel() {
+  local poly="$1"
+  local name="$2"
+  local num_vertices="$3"
+
+  local output="${RESULTS_DIR}/seidel_${name}.tri"
+  if [ -x "${BIN_DIR}/seidel_cli" ]; then
+    if log="$("${BIN_DIR}/seidel_cli" --input "${poly}" --output "${output}" 2>&1)"; then
+      time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
+      echo "seidel,${name},${num_vertices},${time_ms}" >> "${BENCH_CSV}"
+      printf "  %-12s %-20s %6s verts  %10s ms\n" "Seidel" "${name}" "${num_vertices}" "${time_ms}"
+    fi
   fi
 }
 
@@ -115,6 +133,8 @@ for poly in "${POLY_DIR}"/*.poly; do
   run_earclip_naive "${poly}" "${name}" "${num_vertices}"
   run_garey "${poly}" "${name}" "${num_vertices}"
   run_hertel "${poly}" "${name}" "${num_vertices}"
+  run_seidel "${poly}" "${name}" "${num_vertices}"
+  run_reflex "${poly}" "${name}" "${num_vertices}"
   echo ""
 done
 

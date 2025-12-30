@@ -21,8 +21,8 @@ echo "[1/6] Generating test polygons..."
 python3 "${SCRIPTS_DIR}/generate_polygons.py" --output "${POLY_DIR}" --sizes 10 50 100 500 1000 2000 5000 10000
 
 echo "[2/6] Building all executables..."
-cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1
-cmake --build "${BUILD_DIR}" --target earcut_cli reflex_cli -j4 >/dev/null
+cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
+cmake --build "${BUILD_DIR}" --target earcut_cli reflex_cli polytri_cli seidel_cli polypartition_mono_cli polypartition_hm_cli -j4
 
 echo "[3/6] Running benchmarks..."
 BENCH_CSV="${RESULTS_DIR}/methods_benchmark.csv"
@@ -63,6 +63,23 @@ run_reflex() {
   fi
 }
 
+run_polytri() {
+  local poly="$1"
+  local name="$2"
+  local num_vertices="$3"
+  
+  local output="${RESULTS_DIR}/polytri_${name}.tri"
+  # legacy/polytri_cli prints algorithm name as "seidel_polytri"
+  if log="$("${BIN_DIR}/polytri_cli" --input "${poly}" --output "${output}" 2>&1)"; then
+    time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
+    # We do not compute reflex count here; keep schema consistent.
+    echo "kirkpatrick_seidel,${name},${num_vertices},0,${time_ms}" >> "${BENCH_CSV}"
+    printf "  %-14s %-20s %6s verts  %12s ms\n" "Kirkpatrick-Seidel" "${name}" "${num_vertices}" "${time_ms}"
+  else
+    printf "  %-14s %-20s FAILED\n" "Kirkpatrick-Seidel" "${name}"
+  fi
+}
+
 run_earclip_naive() {
   local poly="$1"
   local name="$2"
@@ -89,14 +106,8 @@ run_garey() {
   local name="$2"
   local num_vertices="$3"
   
-  # Skip for large polygons
-  if [ "${num_vertices}" -gt 5000 ]; then
-    printf "  %-14s %-20s %6s verts  SKIPPED (too slow)\n" "Garey" "${name}" "${num_vertices}"
-    return
-  fi
-  
   local output="${RESULTS_DIR}/garey_${name}.tri"
-  if log="$(python3 "${SCRIPTS_DIR}/run_garey.py" --input "${poly}" --output "${output}" 2>&1)"; then
+  if log="$("${BIN_DIR}/polypartition_mono_cli" --input "${poly}" --output "${output}" 2>&1)"; then
     time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
     echo "garey,${name},${num_vertices},0,${time_ms}" >> "${BENCH_CSV}"
     printf "  %-14s %-20s %6s verts  %12s ms\n" "Garey" "${name}" "${num_vertices}" "${time_ms}"
@@ -110,19 +121,28 @@ run_hertel() {
   local name="$2"
   local num_vertices="$3"
   
-  # Skip for large polygons
-  if [ "${num_vertices}" -gt 5000 ]; then
-    printf "  %-14s %-20s %6s verts  SKIPPED (too slow)\n" "Hertel" "${name}" "${num_vertices}"
-    return
-  fi
-  
   local output="${RESULTS_DIR}/hertel_${name}.tri"
-  if log="$(python3 "${SCRIPTS_DIR}/run_hertel.py" --input "${poly}" --output "${output}" 2>&1)"; then
+  if log="$("${BIN_DIR}/polypartition_hm_cli" --input "${poly}" --output "${output}" 2>&1)"; then
     time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
     echo "hertel,${name},${num_vertices},0,${time_ms}" >> "${BENCH_CSV}"
     printf "  %-14s %-20s %6s verts  %12s ms\n" "Hertel" "${name}" "${num_vertices}" "${time_ms}"
   else
     printf "  %-14s %-20s FAILED\n" "Hertel" "${name}"
+  fi
+}
+
+run_seidel() {
+  local poly="$1"
+  local name="$2"
+  local num_vertices="$3"
+
+  local output="${RESULTS_DIR}/seidel_${name}.tri"
+  if log="$("${BIN_DIR}/seidel_cli" --input "${poly}" --output "${output}" 2>&1)"; then
+    time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
+    echo "seidel,${name},${num_vertices},0,${time_ms}" >> "${BENCH_CSV}"
+    printf "  %-14s %-20s %6s verts  %12s ms\n" "Seidel" "${name}" "${num_vertices}" "${time_ms}"
+  else
+    printf "  %-14s %-20s FAILED\n" "Seidel" "${name}"
   fi
 }
 
@@ -132,9 +152,11 @@ for poly in "${POLY_DIR}"/*.poly; do
   
   run_earcut "${poly}" "${name}" "${num_vertices}"
   run_reflex "${poly}" "${name}" "${num_vertices}"
+  run_polytri "${poly}" "${name}" "${num_vertices}"
   run_earclip_naive "${poly}" "${name}" "${num_vertices}"
   run_garey "${poly}" "${name}" "${num_vertices}"
   run_hertel "${poly}" "${name}" "${num_vertices}"
+  run_seidel "${poly}" "${name}" "${num_vertices}"
   echo ""
 done
 

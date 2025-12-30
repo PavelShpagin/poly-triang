@@ -1,0 +1,41 @@
+[submodule "external/Fast-Triangulation-Of-The-Plane"]
+	path = external/Fast-Triangulation-Of-The-Plane
+	url = https://github.com/porfanid/Fast-Triangulation-Of-The-Plane
+
+[submodule "external/GeomAlgLib"]
+	path = external/GeomAlgLib
+	url = https://github.com/jdinkla/GeomAlgLib
+
+[submodule "external/cgal"]
+	path = external/cgal
+	url = https://github.com/CGAL/cgal
+
+[submodule "external/earcut.hpp"]
+	path = external/earcut.hpp
+	url = https://github.com/mapbox/earcut.hpp
+
+[submodule "external/garey"]
+	path = external/garey
+	url = https://github.com/jdinkla/GeomAlgLib.git
+
+[submodule "external/hertel"]
+	path = external/hertel
+	url = https://github.com/porfanid/Fast-Triangulation-Of-The-Plane.git
+
+[submodule "external/polytri"]
+	path = external/polytri
+	url = https://github.com/tcoppex/polytri
+
+[submodule "paper/baselines/Seidel"]
+	path = paper/baselines/Seidel
+	url = https://github.com/palmerc/Seidel
+
+[submodule "paper/baselines/polypartition"]
+	path = paper/baselines/polypartition
+	url = https://github.com/ivanfratric/polypartition
+
+[submodule "paper/baselines/polytri"]
+	path = paper/baselines/polytri
+	url = https://github.com/tcoppex/polytri
+
+

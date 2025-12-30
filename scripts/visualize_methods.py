@@ -24,6 +24,7 @@ COLORS = {
     'earclip_naive': '#ff7f00',    # Orange
     'garey': '#377eb8',            # Blue
     'hertel': '#4daf4a',           # Green
+    'kirkpatrick_seidel': '#a65628',  # Brown
 }
 
 LABELS = {
@@ -32,6 +33,7 @@ LABELS = {
     'earclip_naive': 'Ear Clipping naive O(n^2)',
     'garey': 'Garey O(n log n)',
     'hertel': 'Hertel-Mehlhorn O(n + r log r)',
+    'kirkpatrick_seidel': 'Kirkpatrick-Seidel (randomized) O(n log* n)',
 }
 
 MARKERS = {
@@ -40,6 +42,7 @@ MARKERS = {
     'earclip_naive': '^',
     'garey': 'D',
     'hertel': 'v',
+    'kirkpatrick_seidel': 'P',
 }
 
 
@@ -56,7 +59,7 @@ def plot_benchmark_comparison(df, output_dir):
     fig, ax = plt.subplots(figsize=(12, 7))
     
     # Order: our method first, then others
-    order = ['reflex', 'earcut', 'earclip_naive', 'garey', 'hertel']
+    order = ['reflex', 'kirkpatrick_seidel', 'earcut', 'earclip_naive', 'garey', 'hertel']
     
     for alg in order:
         if alg not in df['algorithm'].unique():
@@ -88,7 +91,7 @@ def plot_scaling_analysis(df, output_dir):
     fig, ax = plt.subplots(figsize=(12, 7))
     
     scaling_results = {}
-    order = ['reflex', 'earcut', 'earclip_naive', 'garey', 'hertel']
+    order = ['reflex', 'kirkpatrick_seidel', 'earcut', 'earclip_naive', 'garey', 'hertel']
     
     for alg in order:
         if alg not in df['algorithm'].unique():

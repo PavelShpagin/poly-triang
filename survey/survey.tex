@@ -1,0 +1,881 @@
+\documentclass[11pt]{article}
+
+% Standard packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{microtype}
+
+% Theorem environments
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{observation}[theorem]{Observation}
+
+% Custom commands
+\newcommand{\bigO}{\mathcal{O}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\doi}[1]{\textsc{doi}: \href{https://doi.org/#1}{\texttt{#1}}}
+
+\title{Triangulating Simple Polygons: A Survey}
+\author{Pavel Shpahin}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This survey traces the algorithmic development of simple polygon triangulation, from the classical $\bigO(n^2)$ ear-removal method to Chazelle's deterministic linear-time algorithm. We examine the key milestones: the $\bigO(n \log n)$ plane-sweep algorithms of Garey, Johnson, Preparata, and Tarjan (1978); the output-sensitive bounds of Hertel--Mehlhorn and Chazelle--Incerpi; Tarjan and Van~Wyk's $\bigO(n \log \log n)$ divide-and-conquer approach; Seidel's elegant $\bigO(n \log^* n)$ randomized algorithm; and finally Chazelle's $\bigO(n)$ tour de force. For each algorithm, we present the essential geometric insights and techniques, aiming to convey not merely what each algorithm does but \emph{why} it works. The survey assumes basic familiarity with computational geometry and is intended for researchers and graduate students seeking a unified view of this fundamental problem.
+\end{abstract}
+
+\tableofcontents
+
+\newpage
+
+%=============================================================================
+\section{Introduction}
+%=============================================================================
+
+Triangulating a simple polygon---partitioning its interior into triangles using non-crossing diagonals---is one of the oldest problems in computational geometry. The task arises naturally in computer graphics (where complex shapes must be decomposed for rendering), finite element methods (where domains require mesh generation), robotics (for motion planning in polygonal environments), and geographic information systems. The ubiquity of the problem and the elegance of the solutions developed over four decades make it an ideal case study in algorithm design.
+
+\subsection{Historical Overview}
+
+The problem's history reflects a persistent drive toward optimality. The naive ear-removal algorithm, formalized by Meisters~\cite{meisters1975} and analyzed by ElGindy, Everett, and Toussaint~\cite{elgindy1993}, achieves $\bigO(n^2)$ time by repeatedly finding and clipping triangular ``ears.'' While simple, this quadratic bound seemed unsatisfying---after all, the output has only $\bigO(n)$ triangles.
+
+The first major advance came in 1978, when Garey, Johnson, Preparata, and Tarjan~\cite{garey1978} achieved $\bigO(n \log n)$ time. Their key insight was that \emph{monotone} polygons---those intersected by any horizontal line in at most two points---can be triangulated in linear time, and any polygon can be decomposed into monotone pieces via a plane sweep. This paradigm of ``decompose, then conquer'' became the template for subsequent work.
+
+The $\bigO(n \log n)$ bound held for nearly a decade. Tarjan and Van~Wyk~\cite{tarjan1988} broke through with an $\bigO(n \log \log n)$ algorithm, using a sophisticated recursive decomposition that processes ``most'' of the polygon quickly and handles difficult regions separately. Randomization offered another path: Clarkson, Tarjan, and Van~Wyk~\cite{clarkson1989} achieved $\bigO(n \log^* n)$ expected time, and Seidel~\cite{seidel1991} provided a remarkably simple algorithm with the same bound.
+
+The ultimate theoretical result came in 1991, when Chazelle~\cite{chazelle1991} proved that simple polygons can be triangulated in deterministic $\bigO(n)$ time. This matches the trivial lower bound (one must read the input), closing the problem from a complexity-theoretic standpoint.
+
+\subsection{Theory Versus Practice}
+
+Yet the story does not end there. Chazelle's algorithm, spanning over 40 pages of intricate analysis, has never been fully implemented. Its constants are large, its data structures complex, and its practical performance likely inferior to simpler $\bigO(n \log n)$ methods for any realistic input size. Meanwhile, the humble ear-clipping algorithm---despite its quadratic worst case---remains popular due to its simplicity and robustness.
+
+This gap between theoretical optimality and practical utility is a recurring theme in computational geometry. Understanding the full spectrum of triangulation algorithms---their ideas, trade-offs, and relationships---illuminates both the power and the limitations of asymptotic analysis.
+
+\subsection{Scope and Organization}
+
+This survey presents the major triangulation algorithms in roughly chronological order. Section~\ref{sec:prelim} establishes definitions and basic results. Section~\ref{sec:ear} covers ear clipping. Section~\ref{sec:monotone} presents the $\bigO(n \log n)$ monotone decomposition approach. Section~\ref{sec:divconq} discusses the Chazelle--Incerpi and Hertel--Mehlhorn algorithms. Section~\ref{sec:loglog} covers the $\bigO(n \log \log n)$ algorithms. Section~\ref{sec:random} presents Seidel's randomized algorithm. Section~\ref{sec:chazelle} surveys Chazelle's linear-time algorithm. We conclude with a comparison and discussion of open problems.
+
+%=============================================================================
+\section{Preliminaries}
+\label{sec:prelim}
+%=============================================================================
+
+\subsection{Basic Definitions}
+
+\begin{definition}[Simple Polygon]
+A \emph{simple polygon} $P$ is a closed curve in the plane formed by a finite sequence of straight line segments (edges) $\{(v_1, v_2), (v_2, v_3), \ldots, (v_{n-1}, v_n), (v_n, v_1)\}$ such that:
+\begin{enumerate}[label=(\roman*)]
+    \item The vertices $v_1, v_2, \ldots, v_n$ are pairwise distinct.
+    \item Non-adjacent edges do not intersect.
+\end{enumerate}
+The polygon divides the plane into a bounded interior and an unbounded exterior.
+\end{definition}
+
+Throughout this survey, we assume polygons are given in order (either clockwise or counterclockwise) as a sequence of $n$ vertices. We use $n$ consistently to denote the number of vertices, which equals the number of edges.
+
+\begin{definition}[Diagonal]
+A \emph{diagonal} of a simple polygon $P$ is a line segment connecting two non-adjacent vertices of $P$ that lies entirely in the interior of $P$ (except for its endpoints).
+\end{definition}
+
+\begin{definition}[Triangulation]
+A \emph{triangulation} of a simple polygon $P$ is a partition of $P$ into triangles by a maximal set of non-crossing diagonals.
+\end{definition}
+
+\begin{theorem}[Triangulation Existence and Size]
+Every simple polygon with $n \geq 3$ vertices admits a triangulation. Any triangulation of an $n$-vertex polygon consists of exactly $n-2$ triangles and $n-3$ diagonals.
+\end{theorem}
+
+\begin{proof}
+Existence follows from the Two-Ears Theorem (Theorem~\ref{thm:two-ears}) by induction. For the count: each diagonal increases the number of faces by one, starting from a single face. With $n-3$ diagonals, we obtain $n-2$ triangular faces. Alternatively, by Euler's formula for planar graphs: $V - E + F = 2$, where $V = n$, $E = n + (n-3) = 2n-3$ (boundary edges plus diagonals), giving $F = n - 1$ faces, of which $n-2$ are interior triangles.
+\end{proof}
+
+\begin{definition}[Convex and Reflex Vertices]
+Let $v_i$ be a vertex of polygon $P$ with neighbors $v_{i-1}$ and $v_{i+1}$ (indices modulo $n$). The \emph{interior angle} at $v_i$ is the angle measured inside $P$ between edges $(v_{i-1}, v_i)$ and $(v_i, v_{i+1})$.
+\begin{itemize}
+    \item $v_i$ is \emph{convex} if its interior angle is less than $\pi$ (180°).
+    \item $v_i$ is \emph{reflex} if its interior angle is greater than $\pi$.
+\end{itemize}
+\end{definition}
+
+The classification of vertices as convex or reflex is central to triangulation algorithms. A convex polygon has no reflex vertices; general simple polygons may have up to $n-3$ reflex vertices.
+
+\begin{definition}[Ear]
+An \emph{ear} of a simple polygon $P$ is a triangle formed by three consecutive vertices $v_{i-1}, v_i, v_{i+1}$ where $v_i$ is convex and the diagonal $(v_{i-1}, v_{i+1})$ lies entirely inside $P$.
+\end{definition}
+
+\begin{theorem}[Two-Ears Theorem~\cite{meisters1975}]
+\label{thm:two-ears}
+Every simple polygon with $n \geq 4$ vertices has at least two non-overlapping ears.
+\end{theorem}
+
+This fundamental result guarantees that ear-clipping algorithms always make progress. We defer the proof to Section~\ref{sec:ear}.
+
+\subsection{Monotone Polygons}
+
+\begin{definition}[Monotone Polygon]
+A simple polygon $P$ is \emph{$y$-monotone} (or simply \emph{monotone}) if every horizontal line intersects $P$ in at most two points, equivalently, in a connected set (either empty, a point, or a line segment).
+\end{definition}
+
+Equivalently, a polygon is $y$-monotone if its boundary can be split into two chains---left and right---each monotone in $y$ (i.e., vertices appear in sorted $y$-order along each chain). This structure enables efficient triangulation.
+
+\begin{definition}[Regular and Singular Vertices]
+A vertex $v_i$ of polygon $P$ is \emph{regular} if exactly one of its adjacent edges lies above $v_i$ and one lies below. Otherwise, $v_i$ is \emph{singular}. Singular vertices are further classified:
+\begin{itemize}
+    \item \emph{Start vertex}: both adjacent edges lie below $v_i$, interior angle $< \pi$.
+    \item \emph{End vertex}: both adjacent edges lie above $v_i$, interior angle $< \pi$.
+    \item \emph{Split vertex}: both adjacent edges lie below $v_i$, interior angle $> \pi$.
+    \item \emph{Merge vertex}: both adjacent edges lie above $v_i$, interior angle $> \pi$.
+\end{itemize}
+\end{definition}
+
+\begin{proposition}
+A simple polygon is $y$-monotone if and only if it has no split or merge vertices.
+\end{proposition}
+
+\subsection{Trapezoidal Decomposition}
+
+\begin{definition}[Trapezoidal Decomposition]
+The \emph{trapezoidal decomposition} (or \emph{vertical decomposition}) of a simple polygon $P$ is obtained by extending vertical rays upward and downward from each vertex until they hit the polygon boundary. This partitions the interior into trapezoids (some of which may be triangles).
+\end{definition}
+
+Trapezoidal decomposition is a key intermediate structure: once computed, it can be converted to a triangulation in linear time by adding at most one diagonal per trapezoid.
+
+%=============================================================================
+\section{Ear Clipping: The $\bigO(n^2)$ Algorithm}
+\label{sec:ear}
+%=============================================================================
+
+The ear-clipping algorithm is the most direct approach to polygon triangulation. Its correctness rests on a simple but fundamental observation about polygon structure.
+
+\subsection{The Two-Ears Theorem}
+
+The algorithm's foundation is the Two-Ears Theorem, which guarantees that ears always exist.
+
+\begin{theorem}[Two-Ears Theorem, Meisters~\cite{meisters1975}]
+Every simple polygon with $n \geq 4$ vertices has at least two non-overlapping ears.
+\end{theorem}
+
+\begin{proof}
+We proceed by induction on $n$. For $n = 4$ (a quadrilateral), at least two vertices are convex, and one can verify directly that at least two ears exist.
+
+For $n > 4$, consider a diagonal $d$ of $P$. Such a diagonal exists: if $P$ is convex, any diagonal works; otherwise, consider a reflex vertex $v$ and the diagonal from $v$ to the nearest visible vertex. The diagonal $d$ splits $P$ into two polygons $P_1$ and $P_2$, each with fewer than $n$ vertices. By induction, each has at least two ears. At most one ear of each sub-polygon can share a vertex with $d$, so at least one ear of each sub-polygon is also an ear of $P$.
+\end{proof}
+
+\subsection{Algorithm Description}
+
+The ear-clipping algorithm repeatedly removes ears:
+
+\begin{enumerate}
+    \item Identify an ear: three consecutive vertices $v_{i-1}, v_i, v_{i+1}$ where $v_i$ is convex and the triangle $(v_{i-1}, v_i, v_{i+1})$ contains no other vertices of $P$.
+    \item Output the triangle and remove $v_i$ from the polygon.
+    \item Repeat until only three vertices remain.
+\end{enumerate}
+
+The Two-Ears Theorem guarantees progress: at each step, an ear exists and can be removed.
+
+\subsection{Complexity Analysis}
+
+The bottleneck is testing whether a candidate ear is valid---specifically, whether any other vertex lies inside the candidate triangle. A straightforward implementation checks all $n-3$ other vertices, taking $\bigO(n)$ time per candidate. In the worst case, we may examine $\bigO(n)$ candidates before finding a valid ear. With $n-2$ triangles to produce, the total time is $\bigO(n^2)$.
+
+\begin{theorem}
+The ear-clipping algorithm triangulates a simple polygon in $\bigO(n^2)$ time and $\bigO(n)$ space.
+\end{theorem}
+
+More careful implementations maintain a list of ``ear candidates'' (convex vertices) and update it incrementally as ears are removed. This can improve practical performance but does not change the worst-case bound.
+
+\subsection{Practical Significance}
+
+Despite its quadratic complexity, ear clipping remains widely used:
+\begin{itemize}
+    \item \textbf{Simplicity}: The algorithm is straightforward to implement and debug.
+    \item \textbf{Robustness}: Only simple predicates (orientation tests, point-in-triangle) are needed.
+    \item \textbf{Practical performance}: On ``typical'' polygons with many convex vertices, ears are found quickly.
+\end{itemize}
+
+The algorithm's weakness---exhaustive checking for each candidate---motivates the more sophisticated approaches that follow.
+
+%=============================================================================
+\section{Monotone Decomposition: The $\bigO(n \log n)$ Algorithms}
+\label{sec:monotone}
+%=============================================================================
+
+The first major improvement over ear clipping came from a structural insight: \emph{monotone} polygons admit a simple linear-time triangulation. The $\bigO(n \log n)$ bound then follows from decomposing arbitrary polygons into monotone pieces via plane sweep.
+
+\subsection{Triangulating Monotone Polygons in Linear Time}
+
+Why are monotone polygons easier? The key is that their structure prevents the ``hiding'' that makes general polygons difficult: in a monotone polygon, vertices are encountered in a predictable order, and visibility is well-behaved.
+
+\begin{theorem}[Garey et al.~\cite{garey1978}]
+\label{thm:monotone-linear}
+A $y$-monotone polygon with $n$ vertices can be triangulated in $\bigO(n)$ time.
+\end{theorem}
+
+\begin{proof}
+The algorithm processes vertices from top to bottom (the monotone structure provides this ordering implicitly). We maintain a stack $S$ of vertices that form a \emph{funnel}---a not-yet-triangulated region bounded by a single edge on one chain and a sequence of reflex angles on the other.
+
+Initialize $S$ with the top two vertices. For each subsequent vertex $v$:
+
+\textbf{Case 1}: $v$ is on the opposite chain from $S.\mathrm{top}()$. Then $v$ can ``see'' all vertices on the stack. Add diagonals from $v$ to all stack vertices except the bottom one (which shares an edge with $v$). Pop all vertices and push the previous top and $v$.
+
+\textbf{Case 2}: $v$ is on the same chain as $S.\mathrm{top}()$. Pop vertices from $S$ and add diagonals from $v$ as long as they lie inside the polygon (equivalently, as long as the turn at the popped vertex is convex from $v$'s perspective). Push the last popped vertex and $v$.
+
+Each vertex is pushed once and popped at most once. Each diagonal addition takes $\bigO(1)$ time. Total: $\bigO(n)$.
+\end{proof}
+
+The funnel invariant is crucial: it ensures that whenever we \emph{can} add a diagonal, we \emph{should}---greedy choices are always globally correct. This is a consequence of monotonicity: there are no ``hidden'' vertices that might invalidate an apparently valid diagonal.
+
+\subsection{The Garey-Johnson-Preparata-Tarjan Algorithm}
+
+The GJPT algorithm~\cite{garey1978} achieves $\bigO(n \log n)$ time by:
+\begin{enumerate}
+    \item Decomposing $P$ into $y$-monotone pieces in $\bigO(n \log n)$ time.
+    \item Triangulating each piece in linear time.
+\end{enumerate}
+
+\subsubsection{Monotone Decomposition via Regularization}
+
+The original approach uses \emph{regularization}: making every vertex regular by adding edges. A plane sweep from top to bottom maintains the edges currently intersecting the sweep line in a balanced search tree.
+
+At each vertex $v$:
+\begin{itemize}
+    \item If $v$ is a split vertex, connect it to the closest vertex above (found via the search tree).
+    \item If $v$ is a merge vertex, connect it to the closest vertex below (handled when that vertex is processed).
+\end{itemize}
+
+The search tree supports insertions, deletions, and predecessor/successor queries in $\bigO(\log n)$ time. With $\bigO(n)$ events, the total time is $\bigO(n \log n)$.
+
+\subsubsection{Alternative: Direct Monotone Partitioning}
+
+A cleaner formulation, presented in textbooks~\cite{deberg2008}, directly handles split and merge vertices:
+
+\begin{enumerate}
+    \item Sort vertices by $y$-coordinate.
+    \item Sweep from top to bottom, maintaining edges intersecting the sweep line in a balanced tree. Each edge stores a ``helper''---the lowest unprocessed vertex to its right.
+    \item At each vertex, based on its type (start, end, split, merge, regular), update the tree and add diagonals to eliminate split/merge vertices.
+\end{enumerate}
+
+\begin{theorem}
+The plane-sweep algorithm partitions a simple polygon into $y$-monotone pieces in $\bigO(n \log n)$ time using $\bigO(n)$ space.
+\end{theorem}
+
+\subsection{Overall Complexity}
+
+\begin{theorem}[GJPT~\cite{garey1978}]
+A simple polygon with $n$ vertices can be triangulated in $\bigO(n \log n)$ time and $\bigO(n)$ space.
+\end{theorem}
+
+\begin{proof}
+Monotone decomposition takes $\bigO(n \log n)$ time. The resulting pieces have total complexity $\bigO(n)$ (each original vertex and each added diagonal endpoint appears in $\bigO(1)$ pieces). Triangulating all pieces takes $\bigO(n)$ total time by Theorem~\ref{thm:monotone-linear}.
+\end{proof}
+
+The $\bigO(n \log n)$ bound arises from sorting and search tree operations. The natural question: can we do better?
+
+%=============================================================================
+\section{Output-Sensitive Algorithms}
+\label{sec:divconq}
+%=============================================================================
+
+The $\bigO(n \log n)$ bound of the GJPT algorithm treats all polygons equally. Yet some polygons are ``easier'' than others: a convex polygon needs no diagonals to find, while a highly non-convex polygon with many reflex vertices presents genuine difficulty. Two algorithms from the mid-1980s captured this intuition with \emph{output-sensitive} bounds.
+
+\subsection{The Chazelle-Incerpi Algorithm}
+
+Chazelle and Incerpi~\cite{chazelle1984} achieved $\bigO(n \log s)$ time, where $s$ measures the polygon's \emph{sinuosity}---roughly, how much it ``spirals.''
+
+\subsubsection{Vertical Decomposition via Divide-and-Conquer}
+
+The algorithm builds a vertical (trapezoidal) decomposition by recursively merging decompositions of boundary subchains.
+
+\begin{definition}[Chain]
+A \emph{chain} $L$ is a connected subsequence of polygon edges: $L = \{(v_i, v_{i+1}), \ldots, (v_{j-1}, v_j)\}$.
+\end{definition}
+
+\begin{definition}[Vertical Extension]
+The \emph{vertical extension} at vertex $v$ consists of two rays from $v$---one upward, one downward---each terminating at the first polygon edge encountered.
+\end{definition}
+
+\begin{definition}[Vertical Decomposition]
+The \emph{vertical decomposition} $\mathrm{VD}(L)$ of chain $L$ is the partition of the polygon interior induced by the vertical extensions from all vertices of $L$.
+\end{definition}
+
+The algorithm divides the boundary into two chains $L_1$ and $L_2$, recursively computes $\mathrm{VD}(L_1)$ and $\mathrm{VD}(L_2)$, and merges them.
+
+\subsubsection{The Merge Procedure}
+
+The merge walks along the boundaries of both decompositions simultaneously, maintaining pointers to the current trapezoid in each. At each step, the algorithm advances whichever pointer ``extends less far'' into the other decomposition, handling six geometric cases.
+
+The key insight is that \emph{spiral} structures---where one chain winds repeatedly around another---can be traversed in time proportional to the spiral's \emph{depth} (how many times it winds) rather than its \emph{length} (how many edges it contains). This is because the merge can ``jump over'' an entire spiral in one step.
+
+\begin{definition}[Sinuosity]
+The \emph{sinuosity} $s$ of a polygon is the number of ``spiraling sections''---roughly, the number of times the merge procedure must handle a spiral.
+\end{definition}
+
+\begin{theorem}[Chazelle-Incerpi~\cite{chazelle1984}]
+A simple polygon can be triangulated in $\bigO(n \log s)$ time.
+\end{theorem}
+
+For convex or monotone polygons, $s = \bigO(1)$, giving linear time. In the worst case $s = \bigO(n)$, recovering $\bigO(n \log n)$.
+
+\subsection{The Hertel-Mehlhorn Algorithm}
+
+Hertel and Mehlhorn~\cite{hertel1985} achieved $\bigO(n + r \log r)$ time, where $r$ is the number of reflex vertices. This bound reflects a different structural insight: \emph{only reflex vertices cause difficulty}.
+
+\subsubsection{Why Reflex Vertices Matter}
+
+In a convex polygon, any vertex can serve as a fan center, and triangulation is trivial. Reflex vertices obstruct this: they create regions where simple fan triangulation fails. The Hertel-Mehlhorn algorithm exploits this by sorting and processing only reflex vertices.
+
+\subsubsection{Algorithm Overview}
+
+\begin{enumerate}
+    \item \textbf{Identify reflex vertices} in $\bigO(n)$ time by checking interior angles.
+    \item \textbf{Sort reflex vertices} by $y$-coordinate in $\bigO(r \log r)$ time.
+    \item \textbf{Process bottom-to-top}: For each reflex vertex $v$ (in sorted order), extend horizontal rays left and right until hitting the polygon boundary. These rays partition the polygon into regions.
+    \item \textbf{Triangulate}: The resulting regions are $y$-monotone and can be triangulated in $\bigO(n)$ total time.
+\end{enumerate}
+
+The critical observation is that processing reflex vertices in $y$-order ensures that each horizontal ray extension can be performed efficiently: the relevant boundary edges are encountered in a predictable sequence.
+
+\begin{theorem}[Hertel-Mehlhorn~\cite{hertel1985}]
+A simple polygon with $n$ vertices and $r$ reflex vertices can be triangulated in $\bigO(n + r \log r)$ time.
+\end{theorem}
+
+Since $r \leq n/2$ (a polygon cannot have more than half its vertices reflex), this is never worse than $\bigO(n \log n)$. For polygons with $r = o(n / \log n)$, it improves upon GJPT. For convex polygons ($r = 0$), it gives $\bigO(n)$.
+
+\begin{remark}
+The Hertel-Mehlhorn bound suggests that the ``true'' complexity of polygon triangulation depends on some measure of non-convexity. This intuition influenced later work, though Chazelle's linear-time algorithm ultimately showed that even worst-case polygons can be handled in $\bigO(n)$ time.
+\end{remark}
+
+%=============================================================================
+\section{Breaking the $\bigO(n \log n)$ Barrier: $\bigO(n \log \log n)$}
+\label{sec:loglog}
+%=============================================================================
+
+The output-sensitive algorithms showed that ``easy'' polygons could be triangulated faster. But could the worst-case bound itself be improved? Tarjan and Van~Wyk~\cite{tarjan1988} answered affirmatively with the first $o(n \log n)$ algorithm for general polygons.
+
+\subsection{The Tarjan-Van Wyk Algorithm}
+
+\subsubsection{High-Level Strategy}
+
+The algorithm uses a recursive decomposition with two key ideas:
+\begin{enumerate}
+    \item Partition the boundary into chains of size $\Theta(n^{2/3})$ and compute horizontal decompositions for each.
+    \item Find ``special vertices'' that determine most of the final decomposition efficiently.
+    \item Handle remaining ``bad'' regions recursively---but ensure their total size shrinks geometrically.
+\end{enumerate}
+
+The bound $\bigO(n \log \log n)$ arises from a clever balancing: chains are large enough that their decompositions capture most of the structure, yet small enough that finding special vertices within them is cheap.
+
+\subsubsection{Key Definitions}
+
+\begin{definition}[$k$-Uniform Partition]
+A \emph{$k$-uniform partition} divides the polygon boundary into chains of size between $k/2$ and $k$, with a horizontal decomposition computed for each.
+\end{definition}
+
+\begin{definition}[Horizontal Neighbor]
+For a vertex $v$, its \emph{horizontal neighbor} $h(v)$ is the first vertex or edge hit by a horizontal ray from $v$ (in either direction).
+\end{definition}
+
+\begin{definition}[Special Vertex]
+A vertex $v$ in chain $L$ of a $k$-uniform partition is \emph{special} if:
+\begin{enumerate}
+    \item The boundary between $v$ and $h(v)$ contains $\geq k/36$ vertices on each side.
+    \item $v$ divides $L$ into two parts, each with $\geq k/36$ vertices.
+\end{enumerate}
+\end{definition}
+
+Special vertices are ``well-positioned''---they lie far from both their horizontal neighbor and the chain endpoints. This ensures that adding a horizontal chord from a special vertex makes significant progress.
+
+\begin{definition}[Good and Bad Regions]
+A region is \emph{good} if its boundary contains at most two horizontal chords; otherwise it is \emph{bad}.
+\end{definition}
+
+Good regions are easy to triangulate (they are nearly monotone). Bad regions require further processing.
+
+\subsubsection{Key Lemmas}
+
+The algorithm's efficiency rests on several structural lemmas:
+
+\begin{lemma}
+Every chain of a $k$-uniform partition contains a special vertex, findable in $\bigO(k)$ time.
+\end{lemma}
+
+\begin{lemma}
+Given a $k$-uniform partition, the horizontal neighbor of any vertex can be found in $\bigO(k)$ time.
+\end{lemma}
+
+\begin{lemma}
+There exists a constant $c < 1$ such that the total size of bad regions is at most $cn$.
+\end{lemma}
+
+The last lemma is crucial: it ensures that the recursive calls on bad regions decrease the problem size geometrically.
+
+\subsubsection{Complexity Analysis}
+
+With $k = n^{2/3}$, the algorithm:
+\begin{itemize}
+    \item Partitions into $n^{1/3}$ chains, each processed in $\bigO(n^{2/3})$ time.
+    \item Finds special vertices and adds their horizontal chords, handling good regions.
+    \item Recurses on bad regions of total size $\leq cn$.
+\end{itemize}
+
+The recurrence is:
+\[
+T(n) = n^{1/3} \cdot T(n^{2/3}) + T(cn) + \bigO(n).
+\]
+
+Solving: the first term contributes $\bigO(n \log \log n)$ (the recursion depth on $n^{2/3}$ is $\bigO(\log \log n)$), and the second term contributes $\bigO(n)$ (geometric series). Total: $\bigO(n \log \log n)$.
+
+\begin{theorem}[Tarjan-Van Wyk~\cite{tarjan1988}]
+A simple polygon with $n$ vertices can be triangulated in $\bigO(n \log \log n)$ time.
+\end{theorem}
+
+\subsection{Simplification by Kirkpatrick, Klawe, and Tarjan}
+
+The original Tarjan-Van Wyk algorithm uses sophisticated data structures. Kirkpatrick, Klawe, and Tarjan~\cite{kirkpatrick1992} later showed that the same bound can be achieved with simpler structures, making the algorithm more accessible (though still complex by practical standards).
+
+%=============================================================================
+\section{Randomized Algorithms: $\bigO(n \log^* n)$}
+\label{sec:random}
+%=============================================================================
+
+The $\bigO(n \log \log n)$ algorithms are deterministic but complex. Randomization offers a different path: simpler algorithms with excellent expected performance. The iterated logarithm $\log^* n$---the number of times one must take logarithms to reduce $n$ below 1---grows so slowly that $\log^* n \leq 5$ for all practical $n$ (indeed, for $n < 2^{65536}$).
+
+\subsection{Background: The Clarkson-Tarjan-Van Wyk Algorithm}
+
+Clarkson, Tarjan, and Van~Wyk~\cite{clarkson1989} first achieved $\bigO(n \log^* n)$ expected time using a Las Vegas algorithm (always correct, randomized running time). Their approach uses random sampling to build a hierarchical decomposition.
+
+\subsection{Seidel's Algorithm}
+
+Seidel~\cite{seidel1991} provided a remarkably elegant algorithm achieving the same bound. Its simplicity makes it the randomized algorithm of choice in practice.
+
+\subsubsection{Incremental Trapezoidal Decomposition}
+
+The algorithm builds a trapezoidal decomposition incrementally, adding polygon edges in random order.
+
+\begin{definition}[Trapezoidation]
+For a subset $S$ of polygon edges, the \emph{trapezoidation} $T(S)$ is the planar subdivision formed by extending horizontal rays from each endpoint of edges in $S$ until hitting another edge or the polygon boundary.
+\end{definition}
+
+The trapezoidation partitions the polygon interior into trapezoids (some degenerate to triangles). Crucially, $T(S)$ can be updated incrementally as edges are added.
+
+\subsubsection{The Query Structure}
+
+To add an edge efficiently, we must locate its endpoints in the current trapezoidation. Seidel maintains a directed acyclic graph $Q(S)$ for point location:
+
+\begin{itemize}
+    \item \textbf{Leaves} correspond to trapezoids of $T(S)$.
+    \item \textbf{$Y$-nodes} compare a query point's $y$-coordinate with a vertex.
+    \item \textbf{$X$-nodes} test whether a query point lies left or right of an edge.
+\end{itemize}
+
+Point location traverses from root to leaf, making $\bigO(1)$ comparisons per node. The structure is \emph{not} a tree---nodes may have multiple parents---but queries still follow a single path.
+
+\subsubsection{Incremental Updates}
+
+When adding edge $e = (v_i, v_{i+1})$:
+\begin{enumerate}
+    \item Locate the trapezoids containing $v_i$ and $v_{i+1}$ using $Q(S)$.
+    \item Walk along $e$, identifying all trapezoids it intersects.
+    \item Split each intersected trapezoid and update $Q(S)$: replace trapezoid leaves with small subgraphs encoding the new structure.
+\end{enumerate}
+
+The update is local: only trapezoids intersected by $e$ change.
+
+\subsubsection{Randomized Analysis}
+
+The key to efficiency is that \emph{random} insertion order yields good expected bounds.
+
+\begin{theorem}
+\label{thm:seidel-depth}
+If edges are inserted in uniformly random order, the expected depth of $Q(S)$ after $k$ insertions is $\bigO(\log k)$.
+\end{theorem}
+
+\begin{theorem}
+\label{thm:seidel-intersect}
+The expected number of trapezoids intersected by a randomly chosen edge is $\bigO(1)$.
+\end{theorem}
+
+Theorem~\ref{thm:seidel-depth} ensures point location is fast; Theorem~\ref{thm:seidel-intersect} ensures updates are cheap. Together, they give $\bigO(n \log n)$ expected time for the basic algorithm.
+
+\subsubsection{Improving to $\bigO(n \log^* n)$}
+
+The $\bigO(\log n)$ point-location cost per edge dominates. Seidel's key insight: \emph{cache} point locations and \emph{refresh} them periodically.
+
+Define $N(k) = \lfloor n / \log^{(k)} n \rfloor$, where $\log^{(k)}$ is the $k$-fold iterated logarithm.
+
+\begin{enumerate}
+    \item Initialize with one edge.
+    \item For $k = 1, 2, \ldots, \log^* n$:
+    \begin{enumerate}
+        \item Add edges randomly until $|S| = N(k)$.
+        \item \textbf{Refresh}: Locate all unprocessed vertices in $Q(S)$, caching their positions.
+    \end{enumerate}
+    \item Add remaining edges using cached locations.
+\end{enumerate}
+
+Between refreshes, point location uses the cached position as a starting point. Since $Q(S)$ has grown by a factor of $\log^{(k)} n$, the expected additional depth is $\bigO(\log \log^{(k)} n) = \bigO(\log^{(k+1)} n)$.
+
+Each refresh costs $\bigO(n)$ (locate $n$ points at $\bigO(\log N(k))$ each, but amortized over the phase). There are $\log^* n$ refreshes. Total refresh cost: $\bigO(n \log^* n)$.
+
+Between refreshes, edge insertions cost $\bigO(1)$ expected time (Theorem~\ref{thm:seidel-intersect}) plus $\bigO(\log^{(k)} n)$ for point location. Summing over all phases: $\bigO(n \log^* n)$.
+
+\begin{theorem}[Seidel~\cite{seidel1991}]
+A simple polygon can be triangulated in $\bigO(n \log^* n)$ expected time and $\bigO(n)$ space.
+\end{theorem}
+
+Since $\log^* n \leq 5$ for all $n \leq 2^{65536}$, this is effectively linear in practice.
+
+\subsubsection{From Trapezoidation to Triangulation}
+
+The trapezoidation $T(P)$ is not itself a triangulation, but conversion is straightforward:
+\begin{enumerate}
+    \item For each trapezoid, add diagonals to triangulate it (at most two diagonals per trapezoid).
+    \item Alternatively, identify that the trapezoids partition $P$ into $y$-monotone pieces, which can be triangulated in $\bigO(n)$ total time.
+\end{enumerate}
+
+%=============================================================================
+\section{Chazelle's Linear-Time Algorithm}
+\label{sec:chazelle}
+%=============================================================================
+
+The algorithms surveyed so far leave a gap: randomized $\bigO(n \log^* n)$ is nearly linear, but can we achieve deterministic $\bigO(n)$? In 1991, Chazelle~\cite{chazelle1991} answered affirmatively with a tour de force of algorithmic engineering.
+
+The result is optimal---$\Omega(n)$ is a trivial lower bound (one must read the input)---but the algorithm is notoriously complex. The original paper spans over 40 pages; no complete implementation exists in the literature.
+
+\subsection{Overview}
+
+Like earlier algorithms, Chazelle's builds a horizontal decomposition and then triangulates. The novelty lies in achieving linear time for the decomposition through two carefully orchestrated phases:
+
+\begin{enumerate}
+    \item \textbf{Bottom-up phase}: Build partial horizontal decompositions for chains of geometrically increasing size, maintaining structural invariants that enable efficient merging.
+    \item \textbf{Top-down phase}: Complete the decomposition using data structures constructed during the first phase.
+\end{enumerate}
+
+The key insight is that maintaining \emph{granularity} and \emph{conformality} invariants allows sublinear-time operations at each level, which sum to linear time overall.
+
+\subsection{Key Concepts}
+
+\subsubsection{Partial Horizontal Decomposition}
+
+\begin{definition}[Partial Horizontal Decomposition]
+A \emph{partial horizontal decomposition} of a chain $L$ is a full horizontal decomposition with some chords removed. The remaining structure partitions the region into \emph{pieces}.
+\end{definition}
+
+\begin{definition}[Arc and Weight]
+An \emph{arc} of a piece is a maximal connected portion of $L$ on the piece boundary between two chord endpoints. The \emph{weight} of a piece is the maximum length of its arcs.
+\end{definition}
+
+\subsubsection{Granularity and Conformality}
+
+\begin{definition}[$\gamma$-Granular Decomposition]
+A partial horizontal decomposition is \emph{$\gamma$-granular} if:
+\begin{enumerate}
+    \item Every piece has weight at most $\gamma$.
+    \item No two adjacent pieces can be merged to form a piece of weight at most $\gamma$ (minimality).
+\end{enumerate}
+\end{definition}
+
+Granularity ensures pieces are small (weight $\bigO(\gamma)$) and numerous ($\bigO(n/\gamma)$ pieces).
+
+\begin{definition}[Conformal Decomposition]
+A partial horizontal decomposition is \emph{conformal} if every piece has at most four neighboring pieces.
+\end{definition}
+
+Conformality bounds the complexity of the dual graph, enabling efficient traversal.
+
+\subsubsection{Decomposition Tree}
+
+\begin{definition}[Decomposition Tree]
+The \emph{decomposition tree} of a partial horizontal decomposition is the dual graph: vertices correspond to pieces, edges connect adjacent pieces.
+\end{definition}
+
+For a conformal decomposition, this tree has bounded degree.
+
+\subsection{The Bottom-Up Phase}
+
+The polygon boundary is divided into chains of geometrically increasing sizes: level-$\lambda$ chains have $2^\lambda$ edges. The algorithm processes levels $\lambda = 0, 1, \ldots, p$ where $2^p \approx n$.
+
+At each level:
+\begin{enumerate}
+    \item \textbf{Merge}: Combine pairs of level-$(\lambda-1)$ chains into level-$\lambda$ chains, merging their decompositions.
+    \item \textbf{Restore conformality}: Add chords to ensure the merged decomposition is conformal.
+    \item \textbf{Restore granularity}: Merge small adjacent pieces to achieve $2^{\lfloor\lambda/5\rfloor}$-granularity.
+    \item \textbf{Build ray-shooting oracle}: Construct a data structure for efficient horizontal ray queries.
+\end{enumerate}
+
+\subsubsection{Ray-Shooting Oracle}
+
+The ray-shooting oracle answers queries of the form: given a point $p$ inside the polygon, find the first edge hit by a horizontal ray from $p$ (in either direction).
+
+\begin{theorem}
+For a $\gamma$-granular conformal chain of length $n$, a ray-shooting oracle can be built in $\bigO(n \log n / \gamma)$ time, supporting queries in $\bigO(\gamma (n/\gamma)^{2/3})$ time.
+\end{theorem}
+
+The sublinear query time is crucial: it allows the merge step to run faster than reading all vertices.
+
+\subsubsection{Merge Complexity}
+
+\begin{theorem}
+Merging two $\gamma$-granular decompositions of chains with $n_1$ and $n_2$ vertices takes time
+\[
+\bigO\left(\left(\frac{n_1}{\gamma} + \frac{n_2}{\gamma} + 1\right)(f(\gamma) + \log(n_1 + n_2))\right)
+\]
+where $f(\gamma) = \gamma^{0.7}$ is the ray-shooting query time.
+\end{theorem}
+
+\subsection{The Top-Down Phase}
+
+After the bottom-up phase, we have a partial decomposition of the entire polygon. The top-down phase completes it by:
+\begin{enumerate}
+    \item Processing pieces in order of the decomposition tree.
+    \item Using ray-shooting oracles from the bottom-up phase to efficiently add remaining chords.
+\end{enumerate}
+
+\begin{theorem}
+The top-down phase runs in $\bigO(n)$ time.
+\end{theorem}
+
+\subsection{Overall Complexity}
+
+The careful balancing of granularity parameters across levels, combined with the sublinear ray-shooting queries, yields:
+
+\begin{theorem}[Chazelle~\cite{chazelle1991}]
+A simple polygon with $n$ vertices can be triangulated in $\bigO(n)$ time.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Let $T(\lambda)$ denote the time to process all level-$\lambda$ chains. The recurrence involves:
+\begin{itemize}
+    \item Merging: depends on the number of pieces and ray-shooting time.
+    \item Conformality restoration: $\bigO(f(\gamma) g(\gamma) (h(\gamma) + \log \gamma))$ per piece.
+    \item Granularity restoration: similar bounds.
+    \item Oracle construction: $\bigO(n \log n / \gamma)$ total.
+\end{itemize}
+With $\gamma = 2^{\lfloor\lambda/5\rfloor}$ and careful accounting, the total across all levels is $\bigO(n)$.
+\end{proof}
+
+\subsection{Practical Considerations}
+
+Despite its theoretical optimality, Chazelle's algorithm has significant practical drawbacks:
+\begin{itemize}
+    \item \textbf{Complexity}: The algorithm involves numerous special cases and intricate data structures.
+    \item \textbf{Constants}: The hidden constants are large, likely making it slower than $\bigO(n \log n)$ algorithms for practical input sizes.
+    \item \textbf{Implementation}: No complete, correct implementation is publicly available.
+\end{itemize}
+
+For these reasons, simpler algorithms (monotone decomposition, Seidel's randomized algorithm, or even ear clipping) remain the methods of choice in practice.
+
+%=============================================================================
+\section{Summary and Comparison}
+\label{sec:summary}
+%=============================================================================
+
+Table~\ref{tab:comparison} summarizes the algorithms discussed in this survey.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Algorithm} & \textbf{Time} & \textbf{Det.?} & \textbf{Practical?} & \textbf{Year} \\
+\midrule
+Ear Clipping & $\bigO(n^2)$ & Yes & Yes & 1975 \\
+GJPT~\cite{garey1978} & $\bigO(n \log n)$ & Yes & Yes & 1978 \\
+Chazelle-Incerpi~\cite{chazelle1984} & $\bigO(n \log s)$ & Yes & Moderate & 1984 \\
+Hertel-Mehlhorn~\cite{hertel1985} & $\bigO(n + r \log r)$ & Yes & Yes & 1985 \\
+Tarjan-Van Wyk~\cite{tarjan1988} & $\bigO(n \log \log n)$ & Yes & No & 1988 \\
+Kirkpatrick et al.~\cite{kirkpatrick1992} & $\bigO(n \log \log n)$ & Yes & Moderate & 1992 \\
+Clarkson et al.~\cite{clarkson1989} & $\bigO(n \log^* n)^*$ & No & Moderate & 1989 \\
+Seidel~\cite{seidel1991} & $\bigO(n \log^* n)^*$ & No & Yes & 1991 \\
+Chazelle~\cite{chazelle1991} & $\bigO(n)$ & Yes & No & 1991 \\
+\bottomrule
+\end{tabular}
+\caption{Polygon triangulation algorithms. ``Det.'' = deterministic; $s$ = sinuosity; $r$ = reflex vertices; $^*$ = expected time.}
+\label{tab:comparison}
+\end{table}
+
+Several patterns emerge from this landscape:
+
+\textbf{Theory vs.\ Practice.} The theoretically optimal algorithm (Chazelle) is impractical, while the simplest algorithm (ear clipping) has the worst asymptotic bound. The sweet spot for most applications lies with the $\bigO(n \log n)$ plane-sweep algorithms or Seidel's randomized method.
+
+\textbf{The Power of Structure.} Output-sensitive algorithms (Hertel-Mehlhorn, Chazelle-Incerpi) show that exploiting polygon structure can yield significant speedups. This suggests that practical algorithms might benefit from detecting and exploiting special cases.
+
+\textbf{Randomization.} Seidel's algorithm demonstrates that randomization can dramatically simplify algorithm design while achieving near-optimal bounds. For practical purposes, $\bigO(n \log^* n)$ is indistinguishable from $\bigO(n)$.
+
+\textbf{Implementation Complexity.} There is a clear correlation between theoretical sophistication and implementation difficulty. The $\bigO(n \log \log n)$ and $\bigO(n)$ algorithms require careful handling of numerous special cases and intricate data structures.
+
+%=============================================================================
+\section{Open Problems and Future Directions}
+\label{sec:open}
+%=============================================================================
+
+The complexity of polygon triangulation is resolved: $\Theta(n)$ is both necessary and sufficient. Yet several compelling questions remain.
+
+\subsection{Simplifying Linear-Time Triangulation}
+
+The central open problem is:
+
+\begin{quote}
+\emph{Is there a simple deterministic linear-time algorithm for polygon triangulation?}
+\end{quote}
+
+``Simple'' is admittedly vague, but the spirit is clear: an algorithm that can be implemented in a few hundred lines of code, understood by a graduate student in an afternoon, and trusted to work correctly. Chazelle's algorithm fails all three criteria.
+
+Amato, Goodrich, and Ramos~\cite{amato2001} made progress with a randomized linear-time algorithm simpler than Chazelle's. A deterministic analog remains elusive.
+
+\subsection{Bridging Theory and Practice}
+
+A related question: is there an algorithm that is both theoretically linear-time and practically competitive with $\bigO(n \log n)$ methods? Current evidence suggests Chazelle's algorithm would be slower than plane-sweep for any realistic input size. Can this gap be closed?
+
+\subsection{Parallel Complexity}
+
+What is the parallel complexity of polygon triangulation? The problem is in NC (solvable in polylogarithmic time with polynomially many processors), but optimal bounds are not known. Can triangulation be done in $\bigO(\log n)$ time with $\bigO(n/\log n)$ processors?
+
+\subsection{Dynamic Triangulation}
+
+How efficiently can a triangulation be maintained under vertex insertions and deletions? This has applications in dynamic mesh generation and computational topology.
+
+\subsection{Quality Triangulation}
+
+The algorithms surveyed produce \emph{some} triangulation, but applications often require \emph{good} triangulations---maximizing minimum angle, bounding aspect ratios, or minimizing total edge length. How efficiently can such quality measures be optimized?
+
+%=============================================================================
+\section{Conclusion}
+%=============================================================================
+
+The triangulation of simple polygons exemplifies the arc of algorithmic research: from naive methods, through increasingly sophisticated attacks, to an optimal solution---and then the realization that optimality alone does not close the book.
+
+The progression from $\bigO(n^2)$ to $\bigO(n)$ required fundamentally new ideas at each stage. The monotone decomposition paradigm of Garey et al.\ introduced plane sweep to the problem. The output-sensitive algorithms of Hertel-Mehlhorn and Chazelle-Incerpi showed that structure could be exploited. The $\bigO(n \log \log n)$ algorithms demonstrated that careful recursive decomposition could beat the sorting barrier. Randomization, in Seidel's hands, yielded elegant simplicity. And Chazelle's linear-time algorithm, for all its complexity, proved that the trivial lower bound is achievable.
+
+Yet the story is incomplete. The gap between Chazelle's theoretical optimum and practical algorithms remains wide. For a practitioner choosing an algorithm today, the recommendations are clear:
+\begin{itemize}
+    \item For simplicity and robustness: ear clipping.
+    \item For guaranteed $\bigO(n \log n)$ performance: plane-sweep monotone decomposition.
+    \item For near-linear expected time with moderate complexity: Seidel's algorithm.
+    \item For polygons with special structure: exploit it (fan triangulation for convex, stack-based for monotone).
+\end{itemize}
+
+For theoreticians, the polygon triangulation problem continues to offer lessons. It demonstrates the power of decomposition (reducing general problems to structured subproblems), the utility of randomization (simplifying algorithms while preserving efficiency), and the importance of structural invariants (granularity and conformality in Chazelle's algorithm). It also illustrates a sobering truth: asymptotic optimality does not guarantee practical utility.
+
+The search for a simple linear-time algorithm continues. Perhaps new geometric insights will yield a breakthrough; perhaps the problem is inherently complex and Chazelle's approach is close to optimal in some deeper sense. Either answer would be illuminating.
+
+%=============================================================================
+\bibliographystyle{plain}
+\begin{thebibliography}{99}
+
+\bibitem{amato2001}
+N.~M. Amato, M.~T. Goodrich, and E.~A. Ramos.
+\newblock A randomized algorithm for triangulating a simple polygon in linear time.
+\newblock {\em Discrete \& Computational Geometry}, 26(2):245--265, 2001.
+\newblock \doi{10.1007/s00454-001-0027-x}
+
+\bibitem{chazelle1984}
+B.~Chazelle and J.~Incerpi.
+\newblock Triangulation and shape-complexity.
+\newblock {\em ACM Transactions on Graphics}, 3(2):135--152, 1984.
+\newblock \doi{10.1145/357337.357340}
+
+\bibitem{chazelle1991}
+B.~Chazelle.
+\newblock Triangulating a simple polygon in linear time.
+\newblock {\em Discrete \& Computational Geometry}, 6(5):485--524, 1991.
+\newblock \doi{10.1007/BF02574703}
+
+\bibitem{clarkson1989}
+K.~L. Clarkson, R.~E. Tarjan, and C.~J. Van~Wyk.
+\newblock A fast {L}as {V}egas algorithm for triangulating a simple polygon.
+\newblock {\em Discrete \& Computational Geometry}, 4(5):423--432, 1989.
+\newblock \doi{10.1007/BF02187741}
+
+\bibitem{deberg2008}
+M.~de~Berg, O.~Cheong, M.~van Kreveld, and M.~Overmars.
+\newblock {\em Computational Geometry: Algorithms and Applications}.
+\newblock Springer-Verlag, third edition, 2008.
+\newblock \doi{10.1007/978-3-540-77974-2}
+
+\bibitem{elgindy1993}
+H.~ElGindy, H.~Everett, and G.~T. Toussaint.
+\newblock Slicing an ear using prune-and-search.
+\newblock {\em Pattern Recognition Letters}, 14(9):719--722, 1993.
+\newblock \doi{10.1016/0167-8655(93)90141-Y}
+
+\bibitem{fournier1984}
+A.~Fournier and D.~Y. Montuno.
+\newblock Triangulating simple polygons and equivalent problems.
+\newblock {\em ACM Transactions on Graphics}, 3(2):153--174, 1984.
+\newblock \doi{10.1145/357337.357341}
+
+\bibitem{garey1978}
+M.~R. Garey, D.~S. Johnson, F.~P. Preparata, and R.~E. Tarjan.
+\newblock Triangulating a simple polygon.
+\newblock {\em Information Processing Letters}, 7(4):175--179, 1978.
+\newblock \doi{10.1016/0020-0190(78)90062-5}
+
+\bibitem{hertel1985}
+S.~Hertel and K.~Mehlhorn.
+\newblock Fast triangulation of the plane with respect to simple polygons.
+\newblock {\em Information and Control}, 64(1--3):52--76, 1985.
+\newblock \doi{10.1016/S0019-9958(85)80044-9}
+
+\bibitem{kirkpatrick1992}
+D.~G. Kirkpatrick, M.~M. Klawe, and R.~E. Tarjan.
+\newblock Polygon triangulation in {$O(n \log \log n)$} time with simple data structures.
+\newblock {\em Algorithmica}, 7(4):329--348, 1992.
+\newblock \doi{10.1007/BF01758773}
+
+\bibitem{lee1977}
+D.~T. Lee and F.~P. Preparata.
+\newblock Location of a point in a planar subdivision and its applications.
+\newblock {\em SIAM Journal on Computing}, 6(3):594--606, 1977.
+\newblock \doi{10.1137/0206041}
+
+\bibitem{meisters1975}
+G.~H. Meisters.
+\newblock Polygons have ears.
+\newblock {\em American Mathematical Monthly}, 82(6):648--651, 1975.
+\newblock \doi{10.2307/2319703}
+
+\bibitem{orourke1998}
+J.~O'Rourke.
+\newblock {\em Computational Geometry in C}.
+\newblock Cambridge University Press, second edition, 1998.
+\newblock \doi{10.1017/CBO9780511804120}
+
+\bibitem{seidel1991}
+R.~Seidel.
+\newblock A simple and fast incremental randomized algorithm for computing trapezoidal decompositions and for triangulating polygons.
+\newblock {\em Computational Geometry: Theory and Applications}, 1(1):51--64, 1991.
+\newblock \doi{10.1016/0925-7721(91)90012-4}
+
+\bibitem{tarjan1988}
+R.~E. Tarjan and C.~J. Van~Wyk.
+\newblock An {$O(n \log \log n)$}-time algorithm for triangulating a simple polygon.
+\newblock {\em SIAM Journal on Computing}, 17(1):143--178, 1988.
+\newblock \doi{10.1137/0217010}
+
+\bibitem{toussaint1991}
+G.~T. Toussaint.
+\newblock Efficient triangulation of simple polygons.
+\newblock {\em The Visual Computer}, 7(5--6):280--295, 1991.
+\newblock \doi{10.1007/BF01905693}
+
+\end{thebibliography}
+
+\end{document}
+

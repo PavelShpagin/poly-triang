@@ -19,7 +19,14 @@ def write_polygon(points, path):
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"{len(points)}\n")
         for x, y in points:
-            f.write(f"{x:.8f} {y:.8f}\n")
+            # Use high precision to avoid accidental equal y after rounding.
+            f.write(f"{x:.17g} {y:.17g}\n")
+
+
+def rotate_points(points, angle_rad):
+    ca = math.cos(angle_rad)
+    sa = math.sin(angle_rad)
+    return [(ca * x - sa * y, sa * x + ca * y) for (x, y) in points]
 
 
 def convex_polygon(n, radius=100.0):
@@ -72,11 +79,15 @@ def main():
     )
     args = parser.parse_args()
 
+    # Deterministic rotation to avoid general-position degeneracies (equal y) in saved files.
+    # The paper algorithm assumes general position; this keeps datasets consistent with it.
+    rot = 0.123456789  # radians
+
     for n in args.sizes:
-        write_polygon(convex_polygon(n), args.output / f"convex_{n}.poly")
-        write_polygon(random_polygon(n), args.output / f"random_{n}.poly")
-        write_polygon(star_polygon(max(3, n // 2)), args.output / f"star_{n}.poly")
-        write_polygon(spiral_polygon(n), args.output / f"spiral_{n}.poly")
+        write_polygon(rotate_points(convex_polygon(n), rot), args.output / f"convex_{n}.poly")
+        write_polygon(rotate_points(random_polygon(n), rot), args.output / f"random_{n}.poly")
+        write_polygon(rotate_points(star_polygon(max(3, n // 2)), rot), args.output / f"star_{n}.poly")
+        write_polygon(rotate_points(spiral_polygon(n), rot), args.output / f"spiral_{n}.poly")
 
     print(f"Generated polygons in {args.output}")
 

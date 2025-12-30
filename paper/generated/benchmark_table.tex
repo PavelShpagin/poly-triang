@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Running time (ms) on random polygons (mean $\pm$ stdev over instances).}
+\label{tab:benchmark}
+\begin{tabular}{rrrrrrr}
+\toprule
+$n$ & $r$ & \textbf{Ours} & Earcut & Seidel & Garey & Hertel--Mehlhorn \\
+\midrule
+100 & 47 & 0.03 \pm 0.00 & \textbf{0.02 \pm 0.00} & -- & 0.04 \pm 0.00 & 0.15 \pm 0.01 \\
+500 & 236 & 0.15 \pm 0.00 & \textbf{0.11 \pm 0.01} & -- & 0.18 \pm 0.00 & 2.34 \pm 0.15 \\
+1,000 & 474 & \textbf{0.34 \pm 0.01} & 0.35 \pm 0.08 & -- & 0.41 \pm 0.03 & 9.18 \pm 0.23 \\
+2,000 & 960 & \textbf{0.72 \pm 0.05} & 0.93 \pm 0.08 & -- & 0.89 \pm 0.06 & 38.52 \pm 2.19 \\
+5,000 & 2391 & \textbf{1.79 \pm 0.07} & 4.13 \pm 0.21 & -- & 2.26 \pm 0.07 & 245.33 \pm 22.89 \\
+10,000 & 4753 & \textbf{4.28 \pm 1.01} & 19.37 \pm 1.50 & -- & 5.71 \pm 1.06 & 1307.53 \pm 95.91 \\
+\bottomrule
+\end{tabular}
+\end{table}

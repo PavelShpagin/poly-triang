@@ -1,0 +1,17 @@
+% Auto-generated methods comparison table
+\begin{table}[htbp]
+\centering
+\caption{Empirical Scaling Analysis of Triangulation Algorithms}
+\label{tab:methods_scaling}
+\begin{tabular}{lccccc}
+\toprule
+Algorithm & Theoretical & Empirical $b$ & $R^2$ & 1K (ms) & 10K (ms) \\
+\midrule
+\textbf{Reflex} (Ours) & $O(n + r \log r)$ & 0.876 & 0.979 & 0.010 & 0.23 \\
+Earcut (optimized C++) & Optimized & 1.591 & 0.961 & 0.176 & 7.25 \\
+Ear Clipping naive & $O(n^2)$ & 1.925 & 0.997 & 154.341 & - \\
+Garey & $O(n \log n)$ & 1.722 & 0.983 & 90.940 & - \\
+Hertel-Mehlhorn & $O(n + r \log r)$ & 1.836 & 0.993 & 190.878 & - \\
+\bottomrule
+\end{tabular}
+\end{table}

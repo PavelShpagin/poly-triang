@@ -1,0 +1,186 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{geometry}
+
+\geometry{margin=1in}
+
+\title{Linear-Time Polygon Triangulation\\via Two-Level Hierarchical Compression}
+\author{}
+\date{}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present a two-level hierarchical approach to polygon triangulation achieving $O(n)$ time. Level 1 (the skeleton) contains only reflex vertices and their immediate neighbors, totaling $O(r)$ vertices. Level 0 (the full polygon) contains all $n$ vertices. We triangulate the skeleton in $O(r)$ time, then expand the triangulation to the full polygon in $O(n)$ time. The key insight is that convex vertices between reflex vertices can be inserted into an existing triangulation via local fan operations.
+\end{abstract}
+
+\section{Introduction}
+
+Chazelle's linear-time algorithm uses a complex multi-level hierarchy of polygon cuts. We simplify this to just two levels:
+\begin{itemize}
+    \item \textbf{Level 1 (Skeleton)}: $O(r)$ vertices --- reflex vertices plus neighbors
+    \item \textbf{Level 0 (Full)}: All $n$ vertices
+\end{itemize}
+
+\section{The Skeleton Polygon}
+
+\begin{definition}[Skeleton]
+The \emph{skeleton} $S(P)$ of polygon $P$ is constructed as follows:
+\begin{enumerate}
+    \item Include all reflex vertices
+    \item Include the immediate predecessor and successor of each reflex vertex
+    \item Connect included vertices in boundary order
+\end{enumerate}
+\end{definition}
+
+\begin{lemma}[Skeleton Size]\label{lem:skeleton-size}
+$|S(P)| \leq 3r$.
+\end{lemma}
+
+\begin{proof}
+Each reflex vertex contributes at most 3 vertices to the skeleton: itself and its two neighbors. (Neighbors may be shared between adjacent reflex vertices.)
+\end{proof}
+
+\begin{lemma}[Skeleton is Simple]\label{lem:skeleton-simple}
+If $P$ is a simple polygon, then $S(P)$ is a simple polygon.
+\end{lemma}
+
+\begin{proof}
+The skeleton preserves the cyclic order of included vertices. Since $P$ is simple, no edges cross. The skeleton edges are ``shortcuts'' that skip over convex chains. Since convex chains bulge outward (away from the polygon interior), the shortcuts lie inside $P$ and don't cross each other.
+
+\textbf{More rigorous}: Consider edge $e = (v_i, v_j)$ in the skeleton where $v_i$ and $v_j$ are consecutive skeleton vertices. The chain $v_i, v_{i+1}, \ldots, v_j$ in $P$ is a convex chain (all interior vertices are convex). The edge $e$ is a ``chord'' of this convex chain. By convexity, $e$ lies inside the convex hull of the chain, which lies inside $P$.
+\end{proof}
+
+\textbf{WARNING}: Lemma~\ref{lem:skeleton-simple} is FALSE in general!
+
+\textbf{Counterexample}: Consider a polygon with two reflex vertices $r_1$ and $r_2$ that are far apart, with convex chains between them that ``wrap around.'' The skeleton edge might cross the original polygon boundary.
+
+\begin{center}
+(Need to insert figure showing problematic case)
+\end{center}
+
+\section{Revised Skeleton Definition}
+
+To ensure the skeleton is simple, we need a more careful construction.
+
+\begin{definition}[Safe Skeleton]
+The \emph{safe skeleton} $S^*(P)$ includes:
+\begin{enumerate}
+    \item All reflex vertices
+    \item All convex vertices that are neighbors of reflex vertices
+    \item Additional ``anchor'' vertices on long convex chains to maintain simplicity
+\end{enumerate}
+\end{definition}
+
+\begin{lemma}[Anchor Placement]
+For a convex chain of length $k$ between two reflex vertices, we need at most $O(1)$ anchor vertices to ensure the skeleton edge remains inside $P$.
+\end{lemma}
+
+\begin{proof}
+The convex chain forms a convex arc. The chord connecting endpoints lies inside the convex hull of the arc, hence inside $P$, if and only if the chain doesn't ``wrap around'' the chord.
+
+For a simple polygon in general position, this is always true: a convex chain between two consecutive reflex vertices cannot wrap around.
+
+Formal argument: Let $r_1$ and $r_2$ be consecutive reflex vertices (in skeleton order). The boundary path from $r_1$ to $r_2$ consists of convex vertices. Since $P$ is simple, this path doesn't cross the line segment $\overline{r_1 r_2}$... 
+
+\textbf{Actually, this CAN fail!}
+\end{proof}
+
+\section{FUNDAMENTAL ISSUE}
+
+The skeleton approach faces a fundamental problem: the ``shortcut'' edges of the skeleton may not lie inside the original polygon.
+
+\begin{theorem}[Skeleton Complexity]
+There exist simple polygons where the skeleton (reflex vertices + neighbors) is not a simple polygon.
+\end{theorem}
+
+\textbf{Consequence}: The two-level hierarchy doesn't directly work. We would need Chazelle's more complex multi-level approach to handle such cases.
+
+\section{Alternative: Edge Contraction Hierarchy}
+
+Instead of removing vertices, we \emph{contract} edges.
+
+\begin{definition}[Contractible Edge]
+An edge $e = (v_i, v_{i+1})$ is \emph{contractible} if:
+\begin{enumerate}
+    \item Both $v_i$ and $v_{i+1}$ are convex
+    \item Contracting $e$ (merging $v_i$ and $v_{i+1}$) keeps the polygon simple
+\end{enumerate}
+\end{definition}
+
+\begin{algorithm}[H]
+\caption{Contract Edges}
+\begin{algorithmic}[1]
+\Procedure{Contract}{$P$}
+    \While{exists contractible edge $e$}
+        \State Merge endpoints of $e$
+        \State Record the contraction for later expansion
+    \EndWhile
+    \State \Return contracted polygon $P'$, contraction history
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+\begin{lemma}[Contraction Bound]
+Edge contraction terminates with $O(r)$ vertices remaining.
+\end{lemma}
+
+\begin{proof}
+Reflex vertices cannot be merged away (contracting into a reflex vertex keeps it reflex). The remaining convex vertices are those adjacent to reflex vertices.
+\end{proof}
+
+\textbf{Problem}: Determining if an edge is contractible requires checking simplicity, which is expensive.
+
+\section{Simplified Contraction: Ear-Based}
+
+\begin{definition}[Contract-Ear]
+An edge $e = (v_i, v_{i+1})$ is a \emph{contract-ear} if:
+\begin{enumerate}
+    \item $v_i$ is convex
+    \item Triangle $(v_{i-1}, v_i, v_{i+1})$ is an ear (no other vertices inside)
+\end{enumerate}
+\end{definition}
+
+Contracting a contract-ear is equivalent to clipping the ear and then re-adding the edge.
+
+\textbf{Observation}: This is essentially ear clipping! We've circled back.
+
+\section{Analysis: Why Hierarchy is Hard}
+
+The hierarchical approach faces these challenges:
+
+\begin{enumerate}
+    \item \textbf{Skeleton simplicity}: The reduced polygon may not be simple
+    \item \textbf{Expansion cost}: Re-inserting vertices into the triangulation requires care
+    \item \textbf{Bookkeeping}: Tracking which original vertices map to which skeleton vertices
+\end{enumerate}
+
+Chazelle solved these with intricate data structures. A ``simple'' two-level hierarchy doesn't capture the necessary structure.
+
+\section{Conclusion}
+
+The two-level hierarchical approach, while intuitive, faces fundamental obstacles:
+\begin{itemize}
+    \item The skeleton may not be simple
+    \item Edge contraction is expensive to verify
+    \item The approach reduces to ear clipping in degenerate cases
+\end{itemize}
+
+\textbf{VERDICT: ABANDON} --- This approach doesn't lead to a simpler O(n) algorithm.
+
+\end{document}
+
