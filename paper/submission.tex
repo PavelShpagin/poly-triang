@@ -552,7 +552,7 @@ Our main random-polygon results are included verbatim from the benchmark harness
 
 \input{generated/benchmark_table}
 
-For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{8--10$\times$ speedup} over Garey et al. For star polygons, we are \textbf{28\% faster} at $n=10{,}000$. For random polygons, performance is competitive---within 5\% of Garey et al.\ at $n=10{,}000$, and \textbf{faster} at intermediate sizes. Our method significantly outperforms Hertel--Mehlhorn (which times out beyond $n=5{,}000$ on star polygons), Seidel (which shows high constant factors), and (for large $n$) the quadratic Earcut ear-clipping baseline.
+For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{8--10$\times$ speedup} over Garey et al. For star polygons, we are \textbf{about 20\% faster} at $n=10{,}000$. For random polygons, we are \textbf{about 25\% faster} than Garey et al.\ at $n=10{,}000$, and remain faster across the tested range. Our method significantly outperforms Hertel--Mehlhorn (which times out at large $n$ on star polygons) and (for large $n$) the quadratic Earcut ear-clipping baseline; Seidel exhibits high constant factors in our experiments and is omitted when it exceeds the benchmark time cap.
 
 %==============================================================================
 \section{Discussion}
