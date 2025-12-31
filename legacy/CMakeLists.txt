@@ -9,13 +9,6 @@ target_include_directories(baseline_common
       ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Earcut CLI
-add_executable(earcut_cli src/earcut_cli.cpp)
-target_link_libraries(earcut_cli PRIVATE baseline_common)
-target_include_directories(earcut_cli PRIVATE
-    ${CMAKE_SOURCE_DIR}/external/earcut.hpp/include
-)
-
 # PolyTri CLI (Seidel)
 add_executable(polytri_cli src/polytri_cli.cpp)
 target_link_libraries(polytri_cli PRIVATE baseline_common)
@@ -48,9 +41,13 @@ add_executable(seidel_cli
     ${CMAKE_SOURCE_DIR}/paper/baselines/Seidel/Seidel/tri.c
 )
 target_include_directories(seidel_cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/paper/baselines/Seidel/Seidel
 )
 target_link_libraries(seidel_cli PRIVATE m)
+target_compile_options(seidel_cli PRIVATE
+    -include ${CMAKE_CURRENT_SOURCE_DIR}/include/seidel.h
+)
 
 # CGAL CLI (Constrained Delaunay example) - optional (not required for paper benchmarks)
 find_package(CGAL QUIET COMPONENTS Core)
@@ -59,14 +56,14 @@ if (CGAL_FOUND)
   target_link_libraries(cgal_polygon_cli PRIVATE baseline_common CGAL::CGAL CGAL::CGAL_Core)
   add_executable(cgal_gen_cli src/cgal_gen_cli.cpp)
   target_link_libraries(cgal_gen_cli PRIVATE baseline_common CGAL::CGAL CGAL::CGAL_Core)
-  set_target_properties(earcut_cli polytri_cli cgal_polygon_cli
+  set_target_properties(polytri_cli cgal_polygon_cli
       PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${BUILD_OUTPUT_DIR}
   )
   set_target_properties(cgal_gen_cli PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${BUILD_OUTPUT_DIR})
 else()
   message(STATUS "CGAL not found; skipping cgal_polygon_cli")
-  set_target_properties(earcut_cli polytri_cli seidel_cli
+  set_target_properties(polytri_cli seidel_cli
       PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${BUILD_OUTPUT_DIR}
   )

@@ -43,7 +43,7 @@
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
 The algorithm reformulates monotone decomposition to maintain active monotone chains rather than individual edges: the sweep processes only extremal events, while regular vertices are handled via lazy pointer advancement in $O(n)$ amortized time.
-Experiments show a \textbf{8--10$\times$ speedup on convex polygons} and \textbf{about 20\% faster on star polygons} over the standard Garey et al.\ monotone-decomposition baseline. On large random polygons ($n=10{,}000$), we are \textbf{about 25\% faster} than Garey et al.\ and \textbf{about 5$\times$ faster} than Earcut. The key practical advantage is that many real-world polygons are nearly convex or have structured reflex vertices, where our algorithm excels.
+Experiments show a \textbf{8--10$\times$ speedup on convex polygons} and \textbf{about 20\% faster on star polygons} over the standard Garey et al.\ monotone-decomposition baseline. On large random polygons ($n=10{,}000$), we are \textbf{about 25\% faster} than Garey et al. The key practical advantage is that many real-world polygons are nearly convex or have structured reflex vertices, where our algorithm excels.
 \end{abstract}
 
 \begin{keyword}
@@ -546,13 +546,13 @@ For $k = o(n / \log n)$, the algorithm runs in $o(n \log n)$ time.
 \label{sec:experiments}
 %==============================================================================
 
-We implemented the algorithm in C++ and compared against: Garey et al.~\cite{garey1978} (monotone decomposition via the \texttt{polypartition} library), Hertel--Mehlhorn~\cite{hertel1983} (convex partition), Seidel~\cite{seidel1991} (incremental randomized triangulation), and the widely used Earcut ear-clipping implementation. All experiments were run with GCC at \texttt{-O3}. To prevent pathological slowdowns from dominating wall-clock time, each baseline run was capped with a fixed timeout; missing entries in tables are shown as ``--''.
+We implemented the algorithm in C++ and compared against: Garey et al.~\cite{garey1978} (monotone decomposition via the \texttt{polypartition} library), Hertel--Mehlhorn~\cite{hertel1983} (convex partition), and Seidel~\cite{seidel1991} (incremental randomized triangulation). All experiments were run with GCC at \texttt{-O3}. To prevent pathological slowdowns from dominating wall-clock time, each baseline run was capped with a fixed timeout; missing entries in tables are shown as ``--''.
 
 Our main random-polygon results are included verbatim from the benchmark harness:
 
 \input{generated/benchmark_table}
 
-For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{8--10$\times$ speedup} over Garey et al. For star polygons, we are \textbf{about 20\% faster} at $n=10{,}000$. For random polygons, we are \textbf{about 25\% faster} than Garey et al.\ at $n=10{,}000$, and remain faster across the tested range. Our method significantly outperforms Hertel--Mehlhorn (which times out at large $n$ on star polygons) and (for large $n$) the quadratic Earcut ear-clipping baseline; Seidel exhibits high constant factors in our experiments and is omitted when it exceeds the benchmark time cap.
+For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{8--10$\times$ speedup} over Garey et al. For star polygons, we are \textbf{about 20\% faster} at $n=10{,}000$. For random polygons, we are \textbf{about 25\% faster} than Garey et al.\ at $n=10{,}000$, and remain faster across the tested range. Our method significantly outperforms Hertel--Mehlhorn (which times out at large $n$ on star polygons); Seidel exhibits high constant factors in our experiments.
 
 %==============================================================================
 \section{Discussion}

@@ -10,10 +10,6 @@
 	path = external/cgal
 	url = https://github.com/CGAL/cgal
 
-[submodule "external/earcut.hpp"]
-	path = external/earcut.hpp
-	url = https://github.com/mapbox/earcut.hpp
-
 [submodule "external/garey"]
 	path = external/garey
 	url = https://github.com/jdinkla/GeomAlgLib.git

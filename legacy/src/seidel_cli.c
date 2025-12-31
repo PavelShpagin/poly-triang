@@ -5,7 +5,7 @@
 //   seidel,vertices=n,triangles=t,time_ms=...
 //
 // NOTE: The upstream implementation uses statically allocated arrays sized by SEGSIZE
-// in seidel.h. We set SEGSIZE to a large value in paper/baselines/Seidel/Seidel/seidel.h.
+// in seidel.h. We override SEGSIZE via our repo-local header in legacy/include/seidel.h.
 
 #include <stdio.h>
 #include <stdlib.h>

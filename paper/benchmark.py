@@ -4,7 +4,6 @@ Paper benchmark runner (final).
 
 Compares:
 - ours:            build/bin/reflex_cli
-- earcut:          build/bin/earcut_cli               (Mapbox earcut.hpp baseline)
 - garey baseline:  build/bin/polypartition_mono_cli   (monotone partition + triangulation)
 - hertel baseline: build/bin/polypartition_hm_cli     (HM convex partition + triangulate pieces)
 - seidel baseline: build/bin/seidel_cli               (palmerc/Seidel C implementation)
@@ -173,9 +172,9 @@ def write_tex_tables(summary: Dict[Tuple[str, int], dict], sizes: List[int], pol
     lines.append(r"\centering")
     lines.append(r"\caption{Running time (ms) on random polygons (mean $\pm$ stdev over instances).}")
     lines.append(r"\label{tab:benchmark}")
-    lines.append(r"\begin{tabular}{rrrrrrr}")
+    lines.append(r"\begin{tabular}{rrrrrr}")
     lines.append(r"\toprule")
-    lines.append(r"$n$ & $r$ & \textbf{Ours} & Earcut & Seidel & Garey & Hertel--Mehlhorn \\")
+    lines.append(r"$n$ & $r$ & \textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\")
     lines.append(r"\midrule")
     for n in sizes:
         rec = summary.get(("random", n))
@@ -184,7 +183,6 @@ def write_tex_tables(summary: Dict[Tuple[str, int], dict], sizes: List[int], pol
         r_avg = int(rec["r_avg"])
         cols = [
             ("ours", rec.get("ours_mean"), rec.get("ours_std")),
-            ("earcut", rec.get("earcut_mean"), rec.get("earcut_std")),
             ("seidel", rec.get("seidel_mean"), rec.get("seidel_std")),
             ("garey", rec.get("garey_mean"), rec.get("garey_std")),
             ("hertel", rec.get("hertel_mean"), rec.get("hertel_std")),
@@ -210,9 +208,9 @@ def write_tex_tables(summary: Dict[Tuple[str, int], dict], sizes: List[int], pol
     lines.append(r"\caption{Running time (ms) across polygon families (mean over instances).}")
     lines.append(r"\label{tab:benchmark-full}")
     lines.append(r"\small")
-    lines.append(r"\begin{tabular}{llrrrrrr}")
+    lines.append(r"\begin{tabular}{llrrrrr}")
     lines.append(r"\toprule")
-    lines.append(r"Type & $n$ & $r$ & \textbf{Ours} & Earcut & Seidel & Garey & Hertel--Mehlhorn \\")
+    lines.append(r"Type & $n$ & $r$ & \textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\")
     lines.append(r"\midrule")
     for ptype in polygon_types:
         first = True
@@ -223,7 +221,6 @@ def write_tex_tables(summary: Dict[Tuple[str, int], dict], sizes: List[int], pol
             r_avg = int(rec["r_avg"])
             cols = [
                 ("ours", rec.get("ours_mean"), rec.get("ours_std")),
-                ("earcut", rec.get("earcut_mean"), rec.get("earcut_std")),
                 ("seidel", rec.get("seidel_mean"), rec.get("seidel_std")),
                 ("garey", rec.get("garey_mean"), rec.get("garey_std")),
                 ("hertel", rec.get("hertel_mean"), rec.get("hertel_std")),
@@ -254,7 +251,6 @@ def main() -> None:
     ap.add_argument("--polygons-per-config", type=int, default=5,
                     help="Number of random instances per (type,n). Keep small for quick runs.")
     ap.add_argument("--timeout-ours", type=float, default=5.0)
-    ap.add_argument("--timeout-earcut", type=float, default=5.0)
     ap.add_argument("--timeout-garey", type=float, default=5.0)
     ap.add_argument("--timeout-hertel", type=float, default=5.0)
     ap.add_argument("--timeout-seidel", type=float, default=5.0)
@@ -264,7 +260,6 @@ def main() -> None:
     # Verify executables exist
     required = {
         "ours": BIN_DIR / "reflex_cli",
-        "earcut": BIN_DIR / "earcut_cli",
         "garey": BIN_DIR / "polypartition_mono_cli",
         "hertel": BIN_DIR / "polypartition_hm_cli",
         "seidel": BIN_DIR / "seidel_cli",
@@ -294,7 +289,6 @@ def main() -> None:
 
     timeouts = {
         "ours": float(args.timeout_ours),
-        "earcut": float(args.timeout_earcut),
         "garey": float(args.timeout_garey),
         "hertel": float(args.timeout_hertel),
         "seidel": float(args.timeout_seidel),
@@ -334,7 +328,7 @@ def main() -> None:
                         reflex_vals.append(ours.reflex_count)
                     times["ours"].append(ours.time_ms)
 
-                    for alg in ["earcut", "garey", "hertel", "seidel"]:
+                    for alg in ["garey", "hertel", "seidel"]:
                         if alg not in required:
                             continue
                         rr = safe_run_cli(required[alg], poly_path, out_path, timeout_s=timeouts[alg])
@@ -362,7 +356,6 @@ def main() -> None:
     lines.append(f"polygons_per_config={polygons_per_config}\n")
     lines.append("Algorithms:\n")
     lines.append("- ours: reflex_cli\n")
-    lines.append("- earcut: earcut_cli (mapbox/earcut.hpp)\n")
     lines.append("- garey: polypartition_mono_cli (Triangulate_MONO)\n")
     lines.append("- hertel: polypartition_hm_cli (ConvexPartition_HM + triangulate pieces)\n")
     if not args.skip_seidel:
@@ -376,7 +369,7 @@ def main() -> None:
             return f"{mean:.3f}"
         return f"{mean:.3f}±{std:.3f}"
 
-    alg_order = ["ours", "earcut", "garey", "hertel"]
+    alg_order = ["ours", "garey", "hertel"]
     if not args.skip_seidel:
         alg_order.append("seidel")
 

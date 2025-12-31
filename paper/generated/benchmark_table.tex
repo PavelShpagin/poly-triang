@@ -2,16 +2,16 @@
 \centering
 \caption{Running time (ms) on random polygons (mean $\pm$ stdev over instances).}
 \label{tab:benchmark}
-\begin{tabular}{rrrrrrr}
+\begin{tabular}{rrrrrr}
 \toprule
-$n$ & $r$ & \textbf{Ours} & Earcut & Seidel & Garey & Hertel--Mehlhorn \\
+$n$ & $r$ & \textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\
 \midrule
-100 & 47 & 0.04 $\pm$ 0.00 & \textbf{0.02 $\pm$ 0.01} & -- & 0.05 $\pm$ 0.01 & 0.16 $\pm$ 0.02 \\
-500 & 236 & 0.17 $\pm$ 0.04 & \textbf{0.12 $\pm$ 0.01} & -- & 0.20 $\pm$ 0.03 & 2.56 $\pm$ 0.25 \\
-1,000 & 474 & 0.36 $\pm$ 0.05 & \textbf{0.31 $\pm$ 0.02} & -- & 0.45 $\pm$ 0.12 & 9.30 $\pm$ 0.72 \\
-2,000 & 960 & \textbf{0.65 $\pm$ 0.02} & 0.86 $\pm$ 0.08 & -- & 0.86 $\pm$ 0.08 & 40.06 $\pm$ 7.44 \\
-5,000 & 2391 & \textbf{1.64 $\pm$ 0.05} & 3.97 $\pm$ 0.16 & -- & 2.15 $\pm$ 0.19 & 226.50 $\pm$ 12.19 \\
-10,000 & 4753 & \textbf{3.90 $\pm$ 0.63} & 20.44 $\pm$ 3.62 & -- & 5.18 $\pm$ 1.61 & 1203.40 $\pm$ 352.21 \\
+100 & 47 & \textbf{0.04 $\pm$ 0.00} & 6.11 $\pm$ 1.04 & 0.04 $\pm$ 0.01 & 0.16 $\pm$ 0.02 \\
+500 & 236 & \textbf{0.17 $\pm$ 0.04} & 6.67 $\pm$ 1.88 & 0.20 $\pm$ 0.03 & 2.56 $\pm$ 0.25 \\
+1,000 & 474 & \textbf{0.35 $\pm$ 0.05} & 5.78 $\pm$ 0.71 & 0.45 $\pm$ 0.12 & 9.30 $\pm$ 0.72 \\
+2,000 & 960 & \textbf{0.66 $\pm$ 0.02} & 7.30 $\pm$ 2.19 & 0.86 $\pm$ 0.08 & 40.06 $\pm$ 7.44 \\
+5,000 & 2391 & \textbf{1.64 $\pm$ 0.06} & 7.88 $\pm$ 0.45 & 2.15 $\pm$ 0.19 & 226.50 $\pm$ 12.19 \\
+10,000 & 4753 & \textbf{3.90 $\pm$ 0.63} & 12.28 $\pm$ 0.97 & 5.18 $\pm$ 1.61 & 1203.40 $\pm$ 352.21 \\
 \bottomrule
 \end{tabular}
 \end{table}
