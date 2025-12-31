@@ -19,14 +19,12 @@ plt.rcParams['legend.fontsize'] = 10
 plt.rcParams['figure.figsize'] = (10, 6)
 
 COLORS = {
-    'earcut': '#e41a1c',           # Red - Optimized Earcut
     'earclip_naive': '#ff7f00',    # Orange - Naive O(n^2)
     'garey': '#377eb8',            # Blue - O(n log n)
     'hertel': '#4daf4a',           # Green - O(n + r log r)
 }
 
 LABELS = {
-    'earcut': 'Earcut (optimized C++)',
     'earclip_naive': 'Ear Clipping naive O(n^2)',
     'garey': 'Garey O(n log n)',
     'hertel': 'Hertel-Mehlhorn O(n + r log r)',
@@ -415,14 +413,13 @@ def generate_scaling_table(scaling_results, output_path):
         f.write("\\midrule\n")
         
         theoretical = {
-            'earcut': 'Optimized C++',
             'earclip_naive': '$O(n^2)$, $b=2$',
             'garey': '$O(n \\log n)$, $b \\approx 1$',
             'hertel': '$O(n + r \\log r)$',
         }
         
         # Order: earclip_naive first to show true O(n^2), then others
-        order = ['earclip_naive', 'earcut', 'garey', 'hertel']
+        order = ['earclip_naive', 'garey', 'hertel']
         for alg in order:
             if alg not in scaling_results:
                 continue

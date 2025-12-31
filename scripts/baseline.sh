@@ -19,26 +19,11 @@ python3 "${SCRIPTS_DIR}/generate_polygons.py" --output "${POLY_DIR}"
 
 echo "[2/5] Configuring and building C++ baselines..."
 cmake -S "${ROOT}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
-cmake --build "${BUILD_DIR}" --target earcut_cli seidel_cli polypartition_mono_cli polypartition_hm_cli reflex_cli polytri_cli
+cmake --build "${BUILD_DIR}" --target seidel_cli polypartition_mono_cli polypartition_hm_cli reflex_cli polytri_cli
 
 echo "[3/5] Running benchmarks..."
 BENCH_CSV="${RESULTS_DIR}/benchmark_results.csv"
 echo "algorithm,polygon,num_vertices,time_ms" > "${BENCH_CSV}"
-
-run_earcut() {
-  local poly="$1"
-  local name="$2"
-  local num_vertices="$3"
-  
-  local output="${RESULTS_DIR}/earcut_${name}.tri"
-  if [ -x "${BIN_DIR}/earcut_cli" ]; then
-    if log="$("${BIN_DIR}/earcut_cli" --input "${poly}" --output "${output}" 2>&1)"; then
-      time_ms="$(echo "${log}" | sed -n 's/.*time_ms=\([0-9.]*\).*/\1/p')"
-      echo "earcut,${name},${num_vertices},${time_ms}" >> "${BENCH_CSV}"
-      printf "  %-12s %-20s %6s verts  %10s ms\n" "Earcut" "${name}" "${num_vertices}" "${time_ms}"
-    fi
-  fi
-}
 
 run_garey() {
   local poly="$1"
@@ -129,7 +114,6 @@ for poly in "${POLY_DIR}"/*.poly; do
   name="$(basename "${poly}" .poly)"
   num_vertices="$(head -n1 "${poly}")"
   
-  run_earcut "${poly}" "${name}" "${num_vertices}"
   run_earclip_naive "${poly}" "${name}" "${num_vertices}"
   run_garey "${poly}" "${name}" "${num_vertices}"
   run_hertel "${poly}" "${name}" "${num_vertices}"

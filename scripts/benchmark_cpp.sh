@@ -48,7 +48,6 @@ for ptype in convex random spiral star; do
         if [ -f "${poly}" ]; then
             echo "  n=${n}..."
             run_bench "reflex" "${poly}" "${ptype}" "${n}"
-            run_bench "earcut" "${poly}" "${ptype}" "${n}"
             run_bench "polytri" "${poly}" "${ptype}" "${n}"
         fi
     done
@@ -68,12 +67,5 @@ print('Average time (ms) by algorithm and polygon type at n=10000:')
 pivot = df[df['n'] == 10000].pivot_table(values='time_ms', index='polygon_type', columns='algorithm', aggfunc='mean')
 if not pivot.empty:
     print(pivot.round(3).to_string())
-    
-    if 'reflex' in pivot.columns and 'earcut' in pivot.columns:
-        print()
-        print('Speedup of reflex over earcut:')
-        speedup = pivot['earcut'] / pivot['reflex']
-        for ptype in speedup.index:
-            print(f'  {ptype}: {speedup[ptype]:.2f}x')
 "
 
