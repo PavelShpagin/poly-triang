@@ -232,6 +232,11 @@ private:
   std::size_t dbg_half_edges_ = 0;
   std::size_t dbg_used_half_edges_ = 0;
 
+  // Scratch buffers (reused across faces) to avoid per-face allocations in
+  // monotone triangulation.
+  std::vector<char> is_left_buf_;
+  std::vector<int> is_left_touched_;
+
   // --- Treap utilities ---
   std::uint32_t rng_ = 0xA341316Cu;
   std::uint32_t next_prio() {
@@ -757,6 +762,7 @@ private:
       auto& nb = adj[u];
       std::sort(nb.begin(), nb.end());
       nb.erase(std::unique(nb.begin(), nb.end()), nb.end());
+      if (nb.size() <= 2) continue;  // ordering is irrelevant for degree <= 2
       auto half = [&](int v) -> int {
         const double dx = pts[v].x - pts[u].x;
         const double dy = pts[v].y - pts[u].y;
@@ -785,30 +791,34 @@ private:
     }
 
     // Face extraction: traverse directed half-edges in the planar embedding.
-    // For directed edge (prev -> curr), the next vertex is the clockwise predecessor
-    // of `prev` in `curr`'s CCW-sorted neighbor list. This follows the face on the
-    // left of the directed edge and yields CCW-oriented interior faces.
-    struct PairHash {
-      std::size_t operator()(const std::pair<int, int>& p) const noexcept {
-        return (static_cast<std::size_t>(p.first) << 32) ^ static_cast<std::size_t>(p.second);
+    //
+    // Performance note:
+    // Avoid unordered_set for half-edge bookkeeping; the total number of directed edges
+    // is only O(n + |D|), so a flat visited array indexed by (vertex, neighbor-slot)
+    // is significantly faster in practice.
+    std::vector<int> off(n + 1, 0);
+    for (int u = 0; u < n; ++u) off[u + 1] = off[u] + static_cast<int>(adj[u].size());
+    const int m_dir = off[n];
+    dbg_half_edges_ = m_dir;
+
+    std::vector<unsigned char> used(m_dir, 0);
+    int used_count = 0;
+
+    // Reverse lookup: for directed edge (u -> adj[u][i]), store the index of u in adj[v].
+    // This makes face-walk steps O(1) without per-step neighbor scans.
+    std::vector<int> rev_pos(m_dir, -1);
+    for (int u = 0; u < n; ++u) {
+      const auto& nbu = adj[u];
+      for (int i = 0; i < static_cast<int>(nbu.size()); ++i) {
+        const int v = nbu[i];
+        const auto& nbv = adj[v];
+        int j = -1;
+        for (int t = 0; t < static_cast<int>(nbv.size()); ++t) {
+          if (nbv[t] == u) { j = t; break; }
+        }
+        rev_pos[off[u] + i] = j;
       }
-    };
-
-    std::unordered_set<std::pair<int, int>, PairHash> half_edges;
-    half_edges.reserve(static_cast<std::size_t>(2 * (n + diagonals_.size()) + 8));
-    for (int i = 0; i < n; ++i) {
-      const int j = (i + 1) % n;
-      half_edges.insert({i, j});
-      half_edges.insert({j, i});
     }
-    for (const auto& [a, b] : diagonals_) {
-      half_edges.insert({a, b});
-      half_edges.insert({b, a});
-    }
-    dbg_half_edges_ = half_edges.size();
-
-    std::unordered_set<std::pair<int, int>, PairHash> used;
-    used.reserve(half_edges.size() * 2);
 
     auto face_area = [&](const std::vector<int>& cyc) -> double {
       double a = 0.0;
@@ -819,50 +829,94 @@ private:
       return 0.5 * a;
     };
 
-    std::vector<std::vector<int>> faces;
-    faces.reserve(diagonals_.size() + 4);
+    std::vector<std::vector<int>> faces_all;
+    std::vector<double> face_areas;
+    faces_all.reserve(diagonals_.size() + 4);
+    face_areas.reserve(diagonals_.size() + 4);
 
-    for (const auto& start_edge : half_edges) {
-      if (used.find(start_edge) != used.end()) continue;
-      const int start_u = start_edge.first;
-      const int start_v = start_edge.second;
+    for (int start_u = 0; start_u < n; ++start_u) {
+      const auto& nb0 = adj[start_u];
+      for (int start_i = 0; start_i < static_cast<int>(nb0.size()); ++start_i) {
+        const int start_e = off[start_u] + start_i;
+        if (used[start_e]) continue;
 
-      std::vector<int> face;
-      face.push_back(start_u);
+        std::vector<int> face;
+        face.reserve(16);
+        face.push_back(start_u);
 
-      int prev = start_u;
-      int curr = start_v;
-      used.insert({prev, curr});
+        int prev = start_u;
+        int curr = nb0[start_i];
 
-      int iterations = 0;
-      while (curr != start_u && iterations < 2 * n) {
-        face.push_back(curr);
-        const auto& neighbors = adj[curr];
-        int idx = -1;
-        for (int i = 0; i < static_cast<int>(neighbors.size()); ++i) {
-          if (neighbors[i] == prev) { idx = i; break; }
+        used[start_e] = 1;
+        ++used_count;
+        int idx_prev = rev_pos[start_e];
+
+        int iterations = 0;
+        while (curr != start_u && iterations < 2 * m_dir) {
+          face.push_back(curr);
+
+          const auto& nb = adj[curr];
+          if (idx_prev < 0 || idx_prev >= static_cast<int>(nb.size())) break;
+
+          const int next_i = (idx_prev - 1 + static_cast<int>(nb.size())) % static_cast<int>(nb.size());
+          const int next_v = nb[next_i];
+
+          const int e2 = off[curr] + next_i;
+          if (!used[e2]) {
+            used[e2] = 1;
+            ++used_count;
+          }
+
+          prev = curr;
+          curr = next_v;
+          idx_prev = rev_pos[e2];
+          ++iterations;
         }
-        if (idx < 0) break;
-        const int next_v =
-            neighbors[(idx - 1 + static_cast<int>(neighbors.size())) % static_cast<int>(neighbors.size())];
-        used.insert({curr, next_v});
-        prev = curr;
-        curr = next_v;
-        ++iterations;
-      }
 
-      if (face.size() >= 3 && iterations < 2 * n) {
-        if (face_area(face) > 1e-9) {
-          faces.push_back(std::move(face));
+        if (curr == start_u && face.size() >= 3 && iterations < 2 * m_dir) {
+          const double a = face_area(face);
+          faces_all.push_back(std::move(face));
+          face_areas.push_back(a);
         }
       }
     }
-    dbg_used_half_edges_ = used.size();
+
+    dbg_used_half_edges_ = used_count;
+
+    // Identify the outer face robustly as the face with the largest absolute area,
+    // then triangulate all remaining (interior) faces after orienting them CCW.
+    std::vector<std::vector<int>> faces;
+    faces.reserve(faces_all.size());
+    if (!faces_all.empty()) {
+      std::size_t outer_idx = 0;
+      double best_abs = std::abs(face_areas[0]);
+      for (std::size_t i = 1; i < faces_all.size(); ++i) {
+        const double ab = std::abs(face_areas[i]);
+        if (ab > best_abs) {
+          best_abs = ab;
+          outer_idx = i;
+        }
+      }
+      for (std::size_t i = 0; i < faces_all.size(); ++i) {
+        if (i == outer_idx) continue;
+        if (std::abs(face_areas[i]) <= 1e-12) continue;
+        auto face = std::move(faces_all[i]);
+        if (face_areas[i] < 0.0) std::reverse(face.begin(), face.end());
+        faces.push_back(std::move(face));
+      }
+    }
+
     dbg_faces_ = static_cast<int>(faces.size());
     dbg_sum_face_verts_ = 0;
     for (const auto& f : faces) dbg_sum_face_verts_ += static_cast<long long>(f.size());
 
     // Triangulate each monotone face.
+    if (static_cast<int>(is_left_buf_.size()) != n) {
+      is_left_buf_.assign(n, 0);
+    } else {
+      std::fill(is_left_buf_.begin(), is_left_buf_.end(), 0);
+    }
+    is_left_touched_.clear();
     for (const auto& f : faces) {
       triangulate_one_monotone_face(pts, f);
     }
@@ -913,22 +967,47 @@ private:
     auto x_next2 = pts[chain2.size() > 1 ? chain2[1] : bottom].x;
     const bool chain1_is_left = x_next1 < x_next2;
 
-    std::vector<char> is_left(pts.size(), 0);
+    // Mark chain membership (reuse buffer to avoid per-face allocations).
+    for (int v : is_left_touched_) is_left_buf_[v] = 0;
+    is_left_touched_.clear();
     const auto& left_chain = chain1_is_left ? chain1 : chain2;
     const auto& right_chain = chain1_is_left ? chain2 : chain1;
-    for (int v : left_chain) is_left[v] = 1;
-    for (int v : right_chain) is_left[v] = 0;
+    for (int v : left_chain) {
+      if (!is_left_buf_[v]) {
+        is_left_buf_[v] = 1;
+        is_left_touched_.push_back(v);
+      }
+    }
 
-    // Sort face vertices by decreasing y (then x asc).
-    std::vector<int> sorted = face;
-    std::sort(sorted.begin(), sorted.end(), [&](int a, int b) { return better_top(a, b); });
+    // Build the sorted-by-y vertex order by merging the two monotone chains
+    // (linear time). Both chains include {top, bottom}.
+    std::vector<int> sorted;
+    sorted.reserve(m);
+    sorted.push_back(top);
+    std::size_t i = 1, j = 1;
+    while (i + 1 < left_chain.size() || j + 1 < right_chain.size()) {
+      if (i + 1 >= left_chain.size()) {
+        sorted.push_back(right_chain[j++]);
+        continue;
+      }
+      if (j + 1 >= right_chain.size()) {
+        sorted.push_back(left_chain[i++]);
+        continue;
+      }
+      if (better_top(left_chain[i], right_chain[j])) {
+        sorted.push_back(left_chain[i++]);
+      } else {
+        sorted.push_back(right_chain[j++]);
+      }
+    }
+    sorted.push_back(bottom);
 
     // Stack-based monotone triangulation.
     std::vector<int> st;
     st.push_back(sorted[0]);
     st.push_back(sorted[1]);
 
-    auto same_chain = [&](int a, int b) { return is_left[a] == is_left[b]; };
+    auto same_chain = [&](int a, int b) { return is_left_buf_[a] == is_left_buf_[b]; };
 
     for (int i = 2; i < m - 1; ++i) {
       const int v = sorted[i];
@@ -948,7 +1027,7 @@ private:
         while (!st.empty()) {
           const int w = st.back();
           const double c = detail::cross(pts[v], pts[u], pts[w]);
-          const bool ok = is_left[v] ? (c > detail::kEps) : (c < -detail::kEps);
+          const bool ok = is_left_buf_[v] ? (c > detail::kEps) : (c < -detail::kEps);
           if (!ok) break;
           triangles_.push_back({v, u, w});
           u = st.back(); st.pop_back();
