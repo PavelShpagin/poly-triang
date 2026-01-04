@@ -1,6 +1,8 @@
 set(BUILD_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
 file(MAKE_DIRECTORY ${BUILD_OUTPUT_DIR})
 
+set(PAPER_BASELINES_DIR ${CMAKE_SOURCE_DIR}/paper/CGAT/code/baselines)
+
 add_library(baseline_common STATIC
     src/polygon_io.cpp
 )
@@ -13,36 +15,36 @@ target_include_directories(baseline_common
 add_executable(polytri_cli src/polytri_cli.cpp)
 target_link_libraries(polytri_cli PRIVATE baseline_common)
 target_include_directories(polytri_cli PRIVATE
-    ${CMAKE_SOURCE_DIR}/paper/baselines/polytri/include
+    ${PAPER_BASELINES_DIR}/polytri/include
 )
 
 # PolyPartition MONO triangulation baseline CLI (Garey-style monotone partition)
 add_executable(polypartition_mono_cli src/polypartition_mono_cli.cpp
-    ${CMAKE_SOURCE_DIR}/paper/baselines/polypartition/src/polypartition.cpp
+    ${PAPER_BASELINES_DIR}/polypartition/src/polypartition.cpp
 )
 target_include_directories(polypartition_mono_cli PRIVATE
-    ${CMAKE_SOURCE_DIR}/paper/baselines/polypartition/src
+    ${PAPER_BASELINES_DIR}/polypartition/src
 )
 
 # PolyPartition Hertel–Mehlhorn convex partition baseline CLI
 add_executable(polypartition_hm_cli src/polypartition_hm_cli.cpp
-    ${CMAKE_SOURCE_DIR}/paper/baselines/polypartition/src/polypartition.cpp
+    ${PAPER_BASELINES_DIR}/polypartition/src/polypartition.cpp
 )
 target_include_directories(polypartition_hm_cli PRIVATE
-    ${CMAKE_SOURCE_DIR}/paper/baselines/polypartition/src
+    ${PAPER_BASELINES_DIR}/polypartition/src
 )
 
 # Seidel baseline CLI (palmerc/Seidel C implementation)
 add_executable(seidel_cli
     src/seidel_cli.c
-    ${CMAKE_SOURCE_DIR}/paper/baselines/Seidel/Seidel/construct.c
-    ${CMAKE_SOURCE_DIR}/paper/baselines/Seidel/Seidel/misc.c
-    ${CMAKE_SOURCE_DIR}/paper/baselines/Seidel/Seidel/monotone.c
-    ${CMAKE_SOURCE_DIR}/paper/baselines/Seidel/Seidel/tri.c
+    ${PAPER_BASELINES_DIR}/Seidel/Seidel/construct.c
+    ${PAPER_BASELINES_DIR}/Seidel/Seidel/misc.c
+    ${PAPER_BASELINES_DIR}/Seidel/Seidel/monotone.c
+    ${PAPER_BASELINES_DIR}/Seidel/Seidel/tri.c
 )
 target_include_directories(seidel_cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/paper/baselines/Seidel/Seidel
+    ${PAPER_BASELINES_DIR}/Seidel/Seidel
 )
 target_link_libraries(seidel_cli PRIVATE m)
 target_compile_options(seidel_cli PRIVATE

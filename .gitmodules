@@ -22,16 +22,3 @@
 	path = external/polytri
 	url = https://github.com/tcoppex/polytri
 
-[submodule "paper/baselines/Seidel"]
-	path = paper/baselines/Seidel
-	url = https://github.com/palmerc/Seidel
-
-[submodule "paper/baselines/polypartition"]
-	path = paper/baselines/polypartition
-	url = https://github.com/ivanfratric/polypartition
-
-[submodule "paper/baselines/polytri"]
-	path = paper/baselines/polytri
-	url = https://github.com/tcoppex/polytri
-
-
