@@ -9,11 +9,13 @@
 #ifndef Triangulate_seidel_h
 #define Triangulate_seidel_h
 
+#ifndef SEGSIZE
 #define SEGSIZE 200		/* max# of segments. Determines how */
 /* many points can be specified as */
 /* input. If your datasets have large */
 /* number of points, increase this */
 /* value accordingly. */
+#endif
 
 /* Functions */
 

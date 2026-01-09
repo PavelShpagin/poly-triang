@@ -48,7 +48,7 @@
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
 The algorithm reformulates monotone decomposition to maintain active monotone chains rather than individual edges: the sweep processes only extremal events, while regular vertices are handled via lazy pointer advancement in $O(n)$ amortized time.
-Experiments show a \textbf{15--48$\times$ speedup on convex polygons} over the standard Garey et al.\ monotone-decomposition baseline. On large random polygons ($n=10{,}000$), we achieve \textbf{about a 1.2$\times$ speedup} over Garey et al.; on star polygons, we observe a \textbf{1.2--1.3$\times$ speedup} across the tested range.
+Experiments show a \textbf{19--46$\times$ speedup on convex polygons} over the standard Garey et al.\ monotone-decomposition baseline. On large random polygons ($n=10{,}000$), we achieve \textbf{about a 1.3$\times$ speedup} over Garey et al.; on star polygons, we observe a \textbf{1.2--1.4$\times$ speedup} across the tested range.
 \end{abstract}
 
 \begin{keyword}
@@ -564,7 +564,7 @@ Our main random-polygon results are included verbatim from the benchmark harness
 
 \input{generated/benchmark_table}
 
-For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{15--48$\times$ speedup} over Garey et al.\ in our suite. For star polygons, we observe a \textbf{1.2--1.3$\times$ speedup} across the tested range (about \textbf{1.3$\times$} at $n=10{,}000$). For random polygons, we achieve \textbf{about a 1.2$\times$ speedup} over Garey et al.\ at $n=10{,}000$ and are typically faster across the tested range. On dent polygons (very small $k$), we are competitive at small $n$ and become faster as $n$ grows. Our method significantly outperforms Hertel--Mehlhorn (which times out at large $n$ on star polygons); Seidel exhibits high constant factors in our experiments.
+For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{19--46$\times$ speedup} over Garey et al.\ in our suite. For star polygons, we observe a \textbf{1.2--1.4$\times$ speedup} across the tested range (about \textbf{1.4$\times$} at $n=10{,}000$). For random polygons, we achieve \textbf{about a 1.3$\times$ speedup} over Garey et al.\ at $n=10{,}000$ and are typically faster across the tested range. On dent polygons (very small $k$), we are competitive at small $n$ and become faster as $n$ grows. Our method significantly outperforms Hertel--Mehlhorn (which times out at large $n$ on star polygons); Seidel exhibits high constant factors in our experiments.
 
 %==============================================================================
 \section{Discussion}

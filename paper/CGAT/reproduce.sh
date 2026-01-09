@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CGAT_DIR="${ROOT}/paper/CGAT"
+CGAT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "[1/4] Build binaries (Release)..."
-mkdir -p "${ROOT}/build"
-cd "${ROOT}/build"
-cmake -DCMAKE_BUILD_TYPE=Release .. >/dev/null
-make -j4 reflex_cli polypartition_mono_cli polypartition_hm_cli seidel_cli >/dev/null
+echo "[1/4] Build binaries..."
+chmod +x "${CGAT_DIR}/build.sh" "${CGAT_DIR}/tools/"*.py
+"${CGAT_DIR}/build.sh"
 
 echo "[2/4] Run benchmarks (paper sizes)..."
-cd "${ROOT}"
-python3 scripts/benchmark_paper.py \
+python3 "${CGAT_DIR}/tools/benchmark_cgat.py" \
   --types convex,dent,random,star \
   --sizes 100,500,1000,2000,5000,10000 \
   --runs 5 \
   --timeout 10 \
+  --bin-dir "${CGAT_DIR}/bin" \
   --out-csv "${CGAT_DIR}/generated/benchmark_results.csv" \
-  --out-raw-csv "${CGAT_DIR}/generated/benchmark_results_raw.csv"
+  --out-raw "${CGAT_DIR}/generated/benchmark_results_raw.csv"
 
 echo "[3/4] Update CGAT LaTeX tables from raw benchmark CSV..."
 python3 "${CGAT_DIR}/tools/generate_cgat_tables.py" \
