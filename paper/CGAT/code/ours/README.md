@@ -17,4 +17,9 @@ The program prints a CSV-like line including:
 - `reflex_count`: number of reflex vertices (paper’s \(r\))
 - `time_ms`
 
+Algorithm selection:
+- `--algo chain` (default): chain-based sweep with hybrid fallback when \(k \ge \max(8, n/8)\)
+- `--algo chain_only`: chain-based sweep only (no fallback)
+- `--algo linked`: edge-based sweep with linked representation (fallback path)
+
 

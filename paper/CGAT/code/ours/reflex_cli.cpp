@@ -1,10 +1,13 @@
 /**
- * Triangulation CLI (benchmark harness).
+ * Triangulation CLI (CGAT artifact / benchmark harness).
  *
- * IMPORTANT: This binary is what `paper/benchmark.py` uses as "ours".
+ * Used by `paper/CGAT/tools/benchmark_cgat.py`.
  *
- * This uses the fast linked-list monotone decomposition that beats
- * PolyPartition by ~10% on random polygons and 15x+ on convex polygons.
+ * Algorithms:
+ * - chain: the paper's chain-based sweep (O(n + k log k)) with a practical
+ *          fallback to an edge-based sweep when k is large.
+ * - chain_only: chain-based sweep only (no fallback).
+ * - linked: edge-based sweep with a linked representation (used for the fallback).
  */
 
 #include <iostream>
@@ -47,7 +50,7 @@ static int count_local_maxima_k(const std::vector<std::pair<double, double>>& co
 }
 
 void print_usage(const char* prog) {
-    std::cerr << "Usage: " << prog << " --input <polygon.poly> --output <output.tri> [--algo chain|linked]\n";
+    std::cerr << "Usage: " << prog << " --input <polygon.poly> --output <output.tri> [--algo chain|chain_only|linked]\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -135,15 +138,15 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (algo == "chain") {
+    if (algo == "chain" || algo == "chain_only") {
         // Hybrid strategy:
-        // - chain-based method for low-reflex polygons
-        // - edge-based (linked) fallback for high-reflex polygons (robust + better constants)
+        // - chain-based method for low-k polygons
+        // - edge-based (linked) fallback for high-k polygons (robust + better constants)
         //
         // This matches the paper artifact's intended usage and prevents pathological
         // cases from aborting benchmark runs.
         const int thresh_k = std::max(8, n / 8); // n/8 heuristic; min guard for tiny n
-        const bool use_fallback = (k_count >= thresh_k);
+        const bool use_fallback = (algo == "chain" && k_count >= thresh_k);
 
         if (use_fallback) {
             std::vector<fast_linked::Point> polygon(n);
@@ -236,7 +239,7 @@ int main(int argc, char* argv[]) {
         }
         fout.close();
 
-        std::cout << "reflex,mode=chain,vertices=" << n
+        std::cout << "reflex,mode=" << (algo == "chain_only" ? "chain_only" : "chain") << ",vertices=" << n
                   << ",triangles=" << triangles.size()
                   << ",expected=" << (n - 2)
                   << ",reflex_count=" << num_reflex
@@ -246,6 +249,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    std::cerr << "Error: unknown --algo '" << algo << "' (expected 'chain' or 'linked')\n";
+    std::cerr << "Error: unknown --algo '" << algo << "' (expected 'chain', 'chain_only', or 'linked')\n";
     return 1;
 }

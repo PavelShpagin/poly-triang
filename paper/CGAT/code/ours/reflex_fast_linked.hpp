@@ -1,12 +1,14 @@
 #pragma once
 /**
- * Fast Linked-List Polygon Triangulation
- * 
- * Reconstructed from context. Combines our fast sweep with PolyPartition-style
- * linked-list face extraction for O(n + r log r) performance.
- * 
- * Key insight: AddDiagonal duplicates vertices and rewires the doubly-linked
- * list, splitting the polygon into separate loops that can be traversed directly.
+ * Edge-based sweep-line triangulation with linked-list face splitting.
+ *
+ * This follows the classic y-monotone decomposition + triangulation pipeline
+ * (PolyPartition-style). Inserted diagonals duplicate vertices and rewire a
+ * doubly-linked list so polygon loops split in O(1), making face extraction fast.
+ *
+ * Used as a practical fallback in `reflex_cli.cpp` for high-k inputs.
+ *
+ * Worst-case time is O(n log n) due to sweep-line balanced-tree operations.
  */
 
 #include <algorithm>

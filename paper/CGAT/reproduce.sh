@@ -24,8 +24,8 @@ python3 "${CGAT_DIR}/tools/generate_cgat_tables.py" \
 
 echo "[4/4] Build submission PDF..."
 cd "${CGAT_DIR}"
-pdflatex -interaction=nonstopmode -halt-on-error submission.tex >/dev/null
-pdflatex -interaction=nonstopmode -halt-on-error submission.tex >/dev/null
+pdflatex -interaction=nonstopmode -halt-on-error submission.tex
+pdflatex -interaction=nonstopmode -halt-on-error submission.tex
 
 echo "Done:"
 echo "  - ${CGAT_DIR}/generated/benchmark_table.tex"
