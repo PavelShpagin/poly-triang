@@ -2,7 +2,8 @@
 /**
  * Chain-based polygon triangulation (paper implementation).
  *
- * Target complexity: O(n + r log r), where r is the number of reflex vertices.
+ * Target complexity: O(n + k log k), where k is the number of local maxima
+ * (equivalently, local minima) with respect to the sweep direction.
  *
  * Notes:
  * - We assume a simple polygon without holes.
@@ -43,6 +44,25 @@ inline double cross(const Point& a, const Point& b, const Point& c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
+inline bool is_convex_polygon(const std::vector<Point>& pts) {
+  const int n = static_cast<int>(pts.size());
+  if (n < 4) return true;
+  int sign = 0;  // 0 = unknown, +1 = left turns, -1 = right turns
+  for (int i = 0; i < n; ++i) {
+    const int p = (i == 0) ? (n - 1) : (i - 1);
+    const int nx = (i + 1 == n) ? 0 : (i + 1);
+    const double c = cross(pts[p], pts[i], pts[nx]);
+    if (c > kEps) {
+      if (sign < 0) return false;
+      sign = 1;
+    } else if (c < -kEps) {
+      if (sign > 0) return false;
+      sign = -1;
+    }
+  }
+  return true;
+}
+
 inline double signed_area(const std::vector<Point>& pts) {
   double a = 0.0;
   const int n = static_cast<int>(pts.size());
@@ -80,7 +100,7 @@ inline bool is_reflex_vertex_ccw(const std::vector<Point>& pts, int i) {
 
 class Triangulator {
 public:
-  std::vector<Triangle> triangulate(std::vector<Point>& pts) {
+  const std::vector<Triangle>& triangulate(std::vector<Point>& pts) {
     triangles_.clear();
     diagonals_.clear();
     diag_set_.clear();
@@ -91,15 +111,19 @@ public:
     dbg_used_half_edges_ = 0;
 
     const int n = static_cast<int>(pts.size());
-    if (n < 3) return {};
-    diag_set_.reserve(static_cast<std::size_t>(2 * n + 8));
+    if (n < 3) return triangles_;
 
-    // Ensure indices and CCW orientation.
-    for (int i = 0; i < n; ++i) pts[i].index = i;
-    if (detail::signed_area(pts) < 0.0) {
-      std::reverse(pts.begin(), pts.end());
-      for (int i = 0; i < n; ++i) pts[i].index = i;
+    // Fast path for convex polygons (including CW order): fan triangulation.
+    // We gate this check to small n because, on non-convex inputs, a full convexity scan
+    // adds an extra O(n) pass.
+    if (n <= 2048 && detail::is_convex_polygon(pts)) {
+      triangles_.resize(n - 2);
+      for (int i = 0; i < n - 2; ++i) triangles_[i] = {0, i + 1, i + 2};
+      return triangles_;
     }
+
+    // Ensure CCW orientation (algorithm assumes CCW).
+    if (detail::signed_area(pts) < 0.0) std::reverse(pts.begin(), pts.end());
 
     // NOTE: The paper assumes general position (distinct y-coordinates).
     // For performance (and to preserve the output-sensitive bound), we do not
@@ -117,8 +141,8 @@ public:
 
     if (reflex_count_ == 0) {
       // Convex -> fan triangulation.
-      triangles_.reserve(n - 2);
-      for (int i = 1; i < n - 1; ++i) triangles_.push_back({0, i, i + 1});
+      triangles_.resize(n - 2);
+      for (int i = 0; i < n - 2; ++i) triangles_[i] = {0, i + 1, i + 2};
       return triangles_;
     }
 

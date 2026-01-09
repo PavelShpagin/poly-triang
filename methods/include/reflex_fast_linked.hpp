@@ -62,6 +62,7 @@ public:
     
     // Fast path for convex polygons
     if (reflex_count == 0) {
+      triangles.reserve(static_cast<std::size_t>(n_ - 2));
       for (int i = 1; i < n_ - 1; ++i) {
         triangles.push_back({0, i, i + 1});
       }

@@ -52,7 +52,7 @@ void print_usage(const char* prog) {
 
 int main(int argc, char* argv[]) {
     std::string input_file, output_file;
-    std::string algo = "chain"; // core method (O(n + r log r))
+    std::string algo = "chain"; // core method (O(n + k log k))
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--input") == 0 || strcmp(argv[i], "-i") == 0) {
@@ -203,17 +203,17 @@ int main(int argc, char* argv[]) {
         }
 
         reflex_tri::Triangulator triangulator;
-        std::vector<reflex_tri::Triangle> triangles;
 
         auto start = std::chrono::high_resolution_clock::now();
         try {
-            triangles = triangulator.triangulate(polygon);
+            triangulator.triangulate(polygon);
         } catch (const std::exception& e) {
             std::cerr << "Error: " << e.what() << "\n";
             return 2;
         }
         auto end = std::chrono::high_resolution_clock::now();
 
+        const auto& triangles = triangulator.debug_triangles();
         const int num_reflex = triangulator.reflex_count();
         double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
