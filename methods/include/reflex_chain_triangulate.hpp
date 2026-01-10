@@ -14,12 +14,12 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <limits>
 #include <string>
 #include <utility>
 #include <stdexcept>
-#include <unordered_set>
 #include <ostream>
 #include <sstream>
 #include <vector>
@@ -39,6 +39,38 @@ struct Triangle {
 namespace detail {
 
 static constexpr double kEps = 1e-12;
+
+inline double nextafter_up(double x) {
+  // Next representable double toward +infinity (exact, no libm call).
+  if (std::isnan(x) || x == std::numeric_limits<double>::infinity()) return x;
+  if (x == 0.0) return std::numeric_limits<double>::denorm_min();
+  std::uint64_t u = 0;
+  std::memcpy(&u, &x, sizeof(u));
+  if (x > 0.0) {
+    ++u;
+  } else {
+    --u;
+  }
+  double out = 0.0;
+  std::memcpy(&out, &u, sizeof(out));
+  return out;
+}
+
+inline double nextafter_down(double x) {
+  // Next representable double toward -infinity (exact, no libm call).
+  if (std::isnan(x) || x == -std::numeric_limits<double>::infinity()) return x;
+  if (x == 0.0) return -std::numeric_limits<double>::denorm_min();
+  std::uint64_t u = 0;
+  std::memcpy(&u, &x, sizeof(u));
+  if (x > 0.0) {
+    --u;
+  } else {
+    ++u;
+  }
+  double out = 0.0;
+  std::memcpy(&out, &u, sizeof(out));
+  return out;
+}
 
 inline double cross(const Point& a, const Point& b, const Point& c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -103,7 +135,6 @@ public:
   const std::vector<Triangle>& triangulate(std::vector<Point>& pts) {
     triangles_.clear();
     diagonals_.clear();
-    diag_set_.clear();
     reflex_count_ = 0;
     dbg_faces_ = 0;
     dbg_sum_face_verts_ = 0;
@@ -195,20 +226,82 @@ public:
 private:
   enum class VType { Start, End, Split, Merge, Regular };
 
+  // Fast open-addressing set for diagonal keys (uint64_t), to avoid per-insert heap
+  // allocations of std::unordered_set in the critical path.
+  struct DiagSet {
+    std::vector<std::uint64_t> tab;
+    std::size_t mask = 0;
+
+    static std::uint64_t mix(std::uint64_t x) {
+      // splitmix64 mix
+      x ^= x >> 33;
+      x *= 0xff51afd7ed558ccdULL;
+      x ^= x >> 33;
+      x *= 0xc4ceb9fe1a85ec53ULL;
+      x ^= x >> 33;
+      return x;
+    }
+
+    void reset(std::size_t expected) {
+      std::size_t cap = 1;
+      const std::size_t need = std::max<std::size_t>(16, expected * 2);
+      while (cap < need) cap <<= 1;
+      tab.assign(cap, 0);
+      mask = cap - 1;
+    }
+
+    bool insert(std::uint64_t key) {
+      // 0 is the empty sentinel; diag_key never returns 0 for u!=v.
+      std::size_t i = static_cast<std::size_t>(mix(key)) & mask;
+      while (true) {
+        std::uint64_t& slot = tab[i];
+        if (slot == 0) {
+          slot = key;
+          return true;
+        }
+        if (slot == key) return false;
+        i = (i + 1) & mask;
+      }
+    }
+  };
+
   struct Chain {
     std::vector<int> verts;  // from upper (local max) to lower (local min)
     int curr = 0;            // current edge is verts[curr] -> verts[curr+1]
-    int pending = -1;        // pending merge vertex index (or -1)
+    // Helper of the current active edge (PolyPartition helper(e)).
+    // We only need to special-case MERGE helpers for diagonal insertion, but
+    // we still must update the helper on right-chain REGULAR and SPLIT vertices
+    // to avoid stale MERGE helpers.
+    int helper = -1;         // helper vertex index (any type), or -1 if unset
+    int pending = -1;        // cached: helper if types_[helper]==Merge, else -1
     int upper = -1;
     int lower = -1;
+    double cache_y = std::numeric_limits<double>::quiet_NaN();
+    double cache_x = 0.0;
+    // Current edge parameters for fast x_at(y):
+    // If edge is non-horizontal, x(y) = base_x - slope * y (derived from the edge endpoints).
+    int edge_a = -1;
+    int edge_b = -1;
+    double edge_base_x = 0.0;
+    double edge_slope = 0.0;
+    bool edge_horizontal = false;
 
     void reset_runtime() {
       curr = 0;
+      helper = -1;
       pending = -1;
+      cache_y = std::numeric_limits<double>::quiet_NaN();
+      cache_x = 0.0;
+      edge_a = -1;
+      edge_b = -1;
+      edge_base_x = 0.0;
+      edge_slope = 0.0;
+      edge_horizontal = false;
     }
 
     void advance(double y, const std::vector<Point>& pts) {
       // Move down the chain until current edge spans y.
+      const int old_curr = curr;
       while (curr + 1 < static_cast<int>(verts.size()) &&
              pts[verts[curr + 1]].y > y + detail::kEps) {
         ++curr;
@@ -217,6 +310,10 @@ private:
         curr = static_cast<int>(verts.size()) - 2;
       }
       if (curr < 0) curr = 0;
+      if (curr != old_curr) {
+        cache_y = std::numeric_limits<double>::quiet_NaN();
+        edge_a = -1;
+      }
     }
 
     int slab_entry_vertex() const {
@@ -243,9 +340,10 @@ private:
   std::vector<int> min_to_chain_;  // [vertex] -> left-boundary chain_id (for local minima)
 
   double sweep_y_ = 0.0;
+  double sweep_y_eps_ = 0.0;
   std::vector<std::pair<int, int>> diagonals_;
   // For uniqueness without an O(|D| log |D|) sort pass.
-  std::unordered_set<std::uint64_t> diag_set_;
+  DiagSet diag_set_;
   std::vector<DiagRecord> diag_records_;
   std::vector<PendingRecord> pending_records_;
   std::vector<Triangle> triangles_;
@@ -260,6 +358,10 @@ private:
   // monotone triangulation.
   std::vector<char> is_left_buf_;
   std::vector<int> is_left_touched_;
+  std::vector<int> tmp_chain1_;
+  std::vector<int> tmp_chain2_;
+  std::vector<int> tmp_sorted_;
+  std::vector<int> tmp_stack_;
 
   // --- Treap utilities ---
   std::uint32_t rng_ = 0xA341316Cu;
@@ -283,7 +385,6 @@ private:
     std::uint32_t prio = 0;
     StatusNode* left = nullptr;
     StatusNode* right = nullptr;
-    StatusNode* parent = nullptr;
   };
 
   std::vector<StatusNode*> status_node_of_chain_;
@@ -297,11 +398,17 @@ private:
 
   bool add_diagonal_unique(int u, int v, int event_v, VType event_type, int chosen_chain,
                            int target_v, const char* reason) {
+    const int n = static_cast<int>(types_.size());
+    // Never insert a boundary edge as a "diagonal" (can create duplicate edges in Phase 3).
+    if (n > 0) {
+      if ((u + 1) % n == v || (v + 1) % n == u) return false;
+    }
     if (u == v) return false;
     if (u > v) std::swap(u, v);
     const std::uint64_t key = diag_key(u, v);
-    if (!diag_set_.insert(key).second) return false;
+    if (!diag_set_.insert(key)) return false;
     diagonals_.push_back({u, v});
+#ifndef NDEBUG
     DiagRecord r;
     r.a = u;
     r.b = v;
@@ -311,47 +418,85 @@ private:
     r.target_v = target_v;
     r.reason = reason;
     diag_records_.push_back(r);
+#else
+    (void)event_v;
+    (void)event_type;
+    (void)chosen_chain;
+    (void)target_v;
+    (void)reason;
+#endif
     return true;
   }
 
   void advance_chain(int cid, const std::vector<Point>& pts) {
     Chain& ch = chains_[cid];
     const int n = static_cast<int>(pts.size());
+    const int old_curr = ch.curr;
     // Step the chain pointer down while the next vertex is still above sweep_y_.
     while (ch.curr + 1 < static_cast<int>(ch.verts.size()) &&
-           pts[ch.verts[ch.curr + 1]].y > sweep_y_ + detail::kEps) {
+           pts[ch.verts[ch.curr + 1]].y > sweep_y_eps_) {
       ++ch.curr;
       const int vreg = ch.verts[ch.curr];
       if (types_[vreg] != VType::Regular) continue;
-      if (ch.pending == -1) continue;
       // Only the "interior to right" regular case corresponds to helper(e_{i-1})
       // on this chain (PolyPartition's REGULAR/right case):
       // Below(v_i, v_{i-1}).
       const int prev = (vreg - 1 + n) % n;
       if (!detail::below(pts, vreg, prev)) continue;
 
-      add_diagonal_unique(vreg, ch.pending, /*event_v=*/vreg, VType::Regular,
-                          /*chosen_chain=*/cid, /*target_v=*/ch.pending,
-                          /*reason=*/"regular:pending");
-      // After the regular-vertex action, helper(e_i) becomes vreg (not a merge),
-      // so we clear the pending merge.
+      // If helper(e_{i-1}) is MERGE, add diagonal to it.
+      if (ch.pending != -1) {
+        add_diagonal_unique(vreg, ch.pending, /*event_v=*/vreg, VType::Regular,
+                            /*chosen_chain=*/cid, /*target_v=*/ch.pending,
+                            /*reason=*/"regular:merge_helper");
+      }
+
+      // REGULAR/right: helper(e_i) becomes vreg (non-merge).
+      ch.helper = vreg;
       ch.pending = -1;
     }
     if (ch.curr + 1 >= static_cast<int>(ch.verts.size())) {
       ch.curr = static_cast<int>(ch.verts.size()) - 2;
     }
     if (ch.curr < 0) ch.curr = 0;
+    if (ch.curr != old_curr) {
+      ch.cache_y = std::numeric_limits<double>::quiet_NaN();
+      ch.edge_a = -1;
+    }
   }
 
   double chain_x_at(int cid, const std::vector<Point>& pts) {
-    advance_chain(cid, pts);
-    const int a = chains_[cid].verts[chains_[cid].curr];
-    const int b = chains_[cid].verts[chains_[cid].curr + 1];
-    const auto& p = pts[a];
-    const auto& q = pts[b];
-    if (std::abs(p.y - q.y) < detail::kEps) return std::min(p.x, q.x);
-    const double t = (p.y - sweep_y_) / (p.y - q.y);  // p.y >= sweep_y_ >= q.y (in general position)
-    return p.x + t * (q.x - p.x);
+    Chain& ch = chains_[cid];
+    if (ch.cache_y == sweep_y_) return ch.cache_x;
+    // Only advance when we've swept below the next vertex on this chain.
+    if (ch.curr + 1 < static_cast<int>(ch.verts.size()) &&
+        pts[ch.verts[ch.curr + 1]].y > sweep_y_eps_) {
+      advance_chain(cid, pts);
+    }
+    const int a = ch.verts[ch.curr];
+    const int b = ch.verts[ch.curr + 1];
+    if (a != ch.edge_a || b != ch.edge_b) {
+      ch.edge_a = a;
+      ch.edge_b = b;
+      const auto& p = pts[a];
+      const auto& q = pts[b];
+      if (std::abs(p.y - q.y) < detail::kEps) {
+        ch.edge_horizontal = true;
+        ch.edge_base_x = std::min(p.x, q.x);
+        ch.edge_slope = 0.0;
+      } else {
+        ch.edge_horizontal = false;
+        // x(y) = p.x + (p.y - y) * (q.x - p.x) / (p.y - q.y)
+        //      = (p.x + p.y*s) - y*s  where s=(q.x-p.x)/(p.y-q.y)
+        const double s = (q.x - p.x) / (p.y - q.y);
+        ch.edge_slope = s;
+        ch.edge_base_x = p.x + p.y * s;
+      }
+    }
+    const double x = ch.edge_horizontal ? ch.edge_base_x : (ch.edge_base_x - sweep_y_ * ch.edge_slope);
+    ch.cache_y = sweep_y_;
+    ch.cache_x = x;
+    return x;
   }
 
   int chain_slab_entry_vertex(int cid, const std::vector<Point>& pts) {
@@ -369,22 +514,14 @@ private:
     return a < b;  // stable tie-breaker
   }
 
-  void set_parent(StatusNode* child, StatusNode* p) {
-    if (child) child->parent = p;
-  }
-
   StatusNode* rotate_merge(StatusNode* a, StatusNode* b) {
     if (!a) return b;
     if (!b) return a;
     if (a->prio < b->prio) {
       a->right = rotate_merge(a->right, b);
-      set_parent(a->right, a);
-      a->parent = nullptr;
       return a;
     }
     b->left = rotate_merge(a, b->left);
-    set_parent(b->left, b);
-    b->parent = nullptr;
     return b;
   }
 
@@ -397,39 +534,28 @@ private:
     }
     if (chain_less(root->chain_id, pivot_chain, pts)) {
       split_by_chain(root->right, pivot_chain, pts, root->right, b);
-      set_parent(root->right, root);
       a = root;
-      a->parent = nullptr;
     } else {
       split_by_chain(root->left, pivot_chain, pts, a, root->left);
-      set_parent(root->left, root);
       b = root;
-      b->parent = nullptr;
     }
   }
 
   void treap_insert(StatusNode*& root, StatusNode* node, const std::vector<Point>& pts) {
     if (!root) {
       root = node;
-      node->parent = nullptr;
       return;
     }
     if (node->prio < root->prio) {
       split_by_chain(root, node->chain_id, pts, node->left, node->right);
-      set_parent(node->left, node);
-      set_parent(node->right, node);
       root = node;
-      root->parent = nullptr;
       return;
     }
     if (chain_less(node->chain_id, root->chain_id, pts)) {
       treap_insert(root->left, node, pts);
-      set_parent(root->left, root);
     } else {
       treap_insert(root->right, node, pts);
-      set_parent(root->right, root);
     }
-    root->parent = nullptr;
   }
 
   void treap_erase(StatusNode*& root, int chain_id, const std::vector<Point>& pts) {
@@ -437,18 +563,14 @@ private:
     if (root->chain_id == chain_id) {
       StatusNode* old = root;
       root = rotate_merge(root->left, root->right);
-      if (root) root->parent = nullptr;
       delete old;
       return;
     }
     if (chain_less(chain_id, root->chain_id, pts)) {
       treap_erase(root->left, chain_id, pts);
-      set_parent(root->left, root);
     } else {
       treap_erase(root->right, chain_id, pts);
-      set_parent(root->right, root);
     }
-    root->parent = nullptr;
   }
 
   // Predecessor chain strictly left of x_query.
@@ -637,16 +759,29 @@ private:
     const int n = static_cast<int>(pts.size());
     // Reset diagonal state for this decomposition.
     diagonals_.clear();
-    diag_set_.clear();
-    diag_set_.reserve(static_cast<std::size_t>(2 * n + 8));
+    // The monotone partition adds O(#split + #merge) diagonals, and both split/merge
+    // are reflex vertices, so O(reflex_count_) is a good capacity estimate.
+    diag_set_.reset(static_cast<std::size_t>(reflex_count_) + 32);
 
-    // Build extrema event list (size O(r)).
+    // Build event list:
+    // - All extrema (START/SPLIT/END/MERGE)
+    // - PLUS regular vertices on the *right* chain (PolyPartition REGULAR/left case),
+    //   because these vertices update helper(e_j) and can clear a pending MERGE helper.
+    //
+    // The original extrema-only variant can leave MERGE helpers stale and produce
+    // invalid diagonals on some polygons (e.g., MERGE-to-MERGE chords crossing the boundary).
     std::vector<Event> events;
     events.reserve(n);
     for (int i = 0; i < n; ++i) {
       if (types_[i] == VType::Start || types_[i] == VType::Split ||
           types_[i] == VType::End || types_[i] == VType::Merge) {
         events.push_back({i, pts[i].y, pts[i].x, types_[i]});
+      } else if (types_[i] == VType::Regular) {
+        // Regular vertex on the right chain: prev is below v (interior to left).
+        const int p = (i - 1 + n) % n;
+        if (!detail::below(pts, i, p)) {
+          events.push_back({i, pts[i].y, pts[i].x, VType::Regular});
+        }
       }
     }
     std::sort(events.begin(), events.end(), [](const Event& a, const Event& b) {
@@ -666,7 +801,7 @@ private:
       StatusNode* node = new StatusNode();
       node->chain_id = cid;
       node->prio = next_prio();
-      node->left = node->right = node->parent = nullptr;
+      node->left = node->right = nullptr;
       treap_insert(status, node, pts);
     };
 
@@ -683,18 +818,19 @@ private:
       // - For END/MERGE (local minima), we query the status just *above* v so the
       //   incoming edges ending at v are still active (and we don't extrapolate
       //   x_at(y) past a chain's lower endpoint).
-      const double neg_inf = -std::numeric_limits<double>::infinity();
-      const double pos_inf = std::numeric_limits<double>::infinity();
-      if (ev.type == VType::End || ev.type == VType::Merge) {
-        sweep_y_ = std::nextafter(vy, pos_inf);
+      if (ev.type == VType::End || ev.type == VType::Merge || ev.type == VType::Regular) {
+        sweep_y_ = detail::nextafter_up(vy);
       } else {
-        sweep_y_ = std::nextafter(vy, neg_inf);
+        sweep_y_ = detail::nextafter_down(vy);
       }
+      sweep_y_eps_ = sweep_y_ + detail::kEps;
 
       if (ev.type == VType::Start) {
         const int cid = max_to_chain_[v];
         if (cid < 0) throw std::runtime_error("missing left chain for Start");
         insert_chain(cid);
+        chains_[cid].helper = v;
+        chains_[cid].pending = -1;
       } else if (ev.type == VType::End) {
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for End");
@@ -703,30 +839,28 @@ private:
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,
-                              /*reason=*/"end:pending");
+                              /*reason=*/"end:merge_helper");
           chains_[rid].pending = -1;
         }
         remove_chain(rid);
       } else if (ev.type == VType::Split) {
         const int left_id = predecessor_chain_by_x(status, pts, pts[v].x);
         if (left_id >= 0) {
-          // Ensure L is advanced to this sweep height before inspecting pending / slab entry.
-          advance_chain(left_id, pts);
-          if (chains_[left_id].pending != -1) {
-            add_diagonal_unique(v, chains_[left_id].pending, /*event_v=*/v, ev.type,
-                                /*chosen_chain=*/left_id, /*target_v=*/chains_[left_id].pending,
-                                /*reason=*/"split:pending");
-            chains_[left_id].pending = -1;
-          } else {
-            const int tgt = chain_slab_entry_vertex(left_id, pts);
-            add_diagonal_unique(v, tgt, /*event_v=*/v, ev.type,
-                                /*chosen_chain=*/left_id, /*target_v=*/tgt,
-                                /*reason=*/"split:slab");
-          }
+          const int tgt = (chains_[left_id].helper != -1)
+                              ? chains_[left_id].helper
+                              : chain_slab_entry_vertex(left_id, pts);
+          add_diagonal_unique(v, tgt, /*event_v=*/v, ev.type,
+                              /*chosen_chain=*/left_id, /*target_v=*/tgt,
+                              /*reason=*/(chains_[left_id].pending != -1) ? "split:merge_helper" : "split:helper");
+          // helper(e_j) becomes v (SPLIT is non-merge)
+          chains_[left_id].helper = v;
+          chains_[left_id].pending = -1;
         }
         const int cid = max_to_chain_[v];
         if (cid < 0) throw std::runtime_error("missing left chain for Split");
         insert_chain(cid);
+        chains_[cid].helper = v;
+        chains_[cid].pending = -1;
       } else if (ev.type == VType::Merge) {
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for Merge");
@@ -736,7 +870,7 @@ private:
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,
-                              /*reason=*/"merge:term_pending");
+                              /*reason=*/"merge:term_merge_helper");
           chains_[rid].pending = -1;
         }
 
@@ -746,19 +880,32 @@ private:
         // After removal, find the chain immediately left of v (edge e_j).
         const int left_id = predecessor_chain_by_x(status, pts, pts[v].x);
         if (left_id >= 0) {
-          // Ensure L is advanced to this sweep height before inspecting pending.
-          advance_chain(left_id, pts);
           if (chains_[left_id].pending != -1) {
             add_diagonal_unique(v, chains_[left_id].pending, /*event_v=*/v, ev.type,
                                 /*chosen_chain=*/left_id, /*target_v=*/chains_[left_id].pending,
-                                /*reason=*/"merge:left_pending");
+                                /*reason=*/"merge:left_merge_helper");
             chains_[left_id].pending = -1;
           }
+          // helper(e_j) becomes v (MERGE is a merge helper)
+          chains_[left_id].helper = v;
           chains_[left_id].pending = v;
+          #ifndef NDEBUG
           pending_records_.push_back({left_id, v, v, "merge:set_pending"});
+          #endif
         }
       } else {
-        // Regular vertices are skipped in extrema-only sweep (handled implicitly via advance_chain()).
+        // Regular vertex on the right chain: update helper of left edge e_j.
+        // If helper(e_j) is MERGE, add the diagonal; then helper(e_j) becomes v.
+        const int left_id = predecessor_chain_by_x(status, pts, pts[v].x);
+        if (left_id >= 0) {
+          if (chains_[left_id].pending != -1) {
+            add_diagonal_unique(v, chains_[left_id].pending, /*event_v=*/v, ev.type,
+                                /*chosen_chain=*/left_id, /*target_v=*/chains_[left_id].pending,
+                                /*reason=*/"regular:right_merge_helper");
+          }
+          chains_[left_id].helper = v;
+          chains_[left_id].pending = -1;
+        }
       }
     }
 
@@ -769,24 +916,39 @@ private:
   void triangulate_monotone_faces(const std::vector<Point>& pts) {
     const int n = static_cast<int>(pts.size());
 
-    // Build adjacency (undirected) from polygon boundary + diagonals.
-    std::vector<std::vector<int>> adj(n);
-    for (int i = 0; i < n; ++i) {
-      const int j = (i + 1) % n;
-      adj[i].push_back(j);
-      adj[j].push_back(i);
-    }
+    // Build adjacency in a flat CSR-like layout to avoid O(n) small allocations
+    // from vector<vector<int>>. This significantly reduces Phase 3 overhead.
+    std::vector<int> deg(n, 2);
     for (const auto& [a, b] : diagonals_) {
-      adj[a].push_back(b);
-      adj[b].push_back(a);
+      ++deg[a];
+      ++deg[b];
     }
 
-    // Sort neighbors around each vertex by angle (CCW), without atan2 (faster).
+    std::vector<int> off(n + 1, 0);
+    for (int u = 0; u < n; ++u) off[u + 1] = off[u] + deg[u];
+    const int m_dir = off[n];
+    dbg_half_edges_ = m_dir;
+
+    std::vector<int> adj(m_dir, -1);
+    std::vector<int> cur = off;
+
+    // Polygon boundary edges.
+    for (int i = 0; i < n; ++i) {
+      const int j = (i + 1) % n;
+      adj[cur[i]++] = j;
+      adj[cur[j]++] = i;
+    }
+    // Decomposition diagonals.
+    for (const auto& [a, b] : diagonals_) {
+      adj[cur[a]++] = b;
+      adj[cur[b]++] = a;
+    }
+
+    // Sort neighbors around each vertex by angle (CCW), without atan2.
     for (int u = 0; u < n; ++u) {
-      auto& nb = adj[u];
-      std::sort(nb.begin(), nb.end());
-      nb.erase(std::unique(nb.begin(), nb.end()), nb.end());
-      if (nb.size() <= 2) continue;  // ordering is irrelevant for degree <= 2
+      const int beg = off[u];
+      const int end = off[u + 1];
+      if (end - beg <= 2) continue;  // ordering is irrelevant for degree <= 2
       auto half = [&](int v) -> int {
         const double dx = pts[v].x - pts[u].x;
         const double dy = pts[v].y - pts[u].y;
@@ -794,7 +956,7 @@ private:
         if (dy < 0) return 1;
         return (dx >= 0) ? 0 : 1;
       };
-      std::sort(nb.begin(), nb.end(), [&](int a, int b) {
+      std::sort(adj.begin() + beg, adj.begin() + end, [&](int a, int b) {
         const int ha = half(a);
         const int hb = half(b);
         if (ha != hb) return ha < hb;
@@ -815,135 +977,97 @@ private:
     }
 
     // Face extraction: traverse directed half-edges in the planar embedding.
-    //
-    // Performance note:
-    // Avoid unordered_set for half-edge bookkeeping; the total number of directed edges
-    // is only O(n + |D|), so a flat visited array indexed by (vertex, neighbor-slot)
-    // is significantly faster in practice.
-    std::vector<int> off(n + 1, 0);
-    for (int u = 0; u < n; ++u) off[u + 1] = off[u] + static_cast<int>(adj[u].size());
-    const int m_dir = off[n];
-    dbg_half_edges_ = m_dir;
-
     std::vector<unsigned char> used(m_dir, 0);
     int used_count = 0;
 
     // Reverse lookup: for directed edge (u -> adj[u][i]), store the index of u in adj[v].
-    // This makes face-walk steps O(1) without per-step neighbor scans.
+    // In practice, neighbor degrees are small; a linear scan is faster than a global hash map.
     std::vector<int> rev_pos(m_dir, -1);
     for (int u = 0; u < n; ++u) {
-      const auto& nbu = adj[u];
-      for (int i = 0; i < static_cast<int>(nbu.size()); ++i) {
-        const int v = nbu[i];
-        const auto& nbv = adj[v];
+      const int beg_u = off[u];
+      const int end_u = off[u + 1];
+      for (int e = beg_u; e < end_u; ++e) {
+        const int v = adj[e];
+        const int beg_v = off[v];
+        const int end_v = off[v + 1];
         int j = -1;
-        for (int t = 0; t < static_cast<int>(nbv.size()); ++t) {
-          if (nbv[t] == u) { j = t; break; }
+        for (int t = beg_v; t < end_v; ++t) {
+          if (adj[t] == u) { j = t - beg_v; break; }
         }
-        rev_pos[off[u] + i] = j;
+        rev_pos[e] = j;
       }
     }
 
-    auto face_area = [&](const std::vector<int>& cyc) -> double {
-      double a = 0.0;
-      for (int i = 0; i < static_cast<int>(cyc.size()); ++i) {
-        const int j = (i + 1) % static_cast<int>(cyc.size());
-        a += pts[cyc[i]].x * pts[cyc[j]].y - pts[cyc[j]].x * pts[cyc[i]].y;
-      }
-      return 0.5 * a;
-    };
-
-    std::vector<std::vector<int>> faces_all;
-    std::vector<double> face_areas;
-    faces_all.reserve(diagonals_.size() + 4);
-    face_areas.reserve(diagonals_.size() + 4);
-
-    for (int start_u = 0; start_u < n; ++start_u) {
-      const auto& nb0 = adj[start_u];
-      for (int start_i = 0; start_i < static_cast<int>(nb0.size()); ++start_i) {
-        const int start_e = off[start_u] + start_i;
-        if (used[start_e]) continue;
-
-        std::vector<int> face;
-        face.reserve(16);
-        face.push_back(start_u);
-
-        int prev = start_u;
-        int curr = nb0[start_i];
-
-        used[start_e] = 1;
-        ++used_count;
-        int idx_prev = rev_pos[start_e];
-
-        int iterations = 0;
-        while (curr != start_u && iterations < 2 * m_dir) {
-          face.push_back(curr);
-
-          const auto& nb = adj[curr];
-          if (idx_prev < 0 || idx_prev >= static_cast<int>(nb.size())) break;
-
-          const int next_i = (idx_prev - 1 + static_cast<int>(nb.size())) % static_cast<int>(nb.size());
-          const int next_v = nb[next_i];
-
-          const int e2 = off[curr] + next_i;
-          if (!used[e2]) {
-            used[e2] = 1;
-            ++used_count;
-          }
-
-          prev = curr;
-          curr = next_v;
-          idx_prev = rev_pos[e2];
-          ++iterations;
-        }
-
-        if (curr == start_u && face.size() >= 3 && iterations < 2 * m_dir) {
-          const double a = face_area(face);
-          faces_all.push_back(std::move(face));
-          face_areas.push_back(a);
-        }
-      }
-    }
-
-    dbg_used_half_edges_ = used_count;
-
-    // Identify the outer face robustly as the face with the largest absolute area,
-    // then triangulate all remaining (interior) faces after orienting them CCW.
-    std::vector<std::vector<int>> faces;
-    faces.reserve(faces_all.size());
-    if (!faces_all.empty()) {
-      std::size_t outer_idx = 0;
-      double best_abs = std::abs(face_areas[0]);
-      for (std::size_t i = 1; i < faces_all.size(); ++i) {
-        const double ab = std::abs(face_areas[i]);
-        if (ab > best_abs) {
-          best_abs = ab;
-          outer_idx = i;
-        }
-      }
-      for (std::size_t i = 0; i < faces_all.size(); ++i) {
-        if (i == outer_idx) continue;
-        if (std::abs(face_areas[i]) <= 1e-12) continue;
-        auto face = std::move(faces_all[i]);
-        if (face_areas[i] < 0.0) std::reverse(face.begin(), face.end());
-        faces.push_back(std::move(face));
-      }
-    }
-
-    dbg_faces_ = static_cast<int>(faces.size());
-    dbg_sum_face_verts_ = 0;
-    for (const auto& f : faces) dbg_sum_face_verts_ += static_cast<long long>(f.size());
-
-    // Triangulate each monotone face.
+    // Triangulate each interior face on-the-fly (no storing of all faces).
+    // With CCW neighbor ordering and the "prev neighbor" face-walk rule, interior
+    // faces are traversed CCW (positive signed area) while the outer face is CW.
     if (static_cast<int>(is_left_buf_.size()) != n) {
       is_left_buf_.assign(n, 0);
     } else {
       std::fill(is_left_buf_.begin(), is_left_buf_.end(), 0);
     }
     is_left_touched_.clear();
-    for (const auto& f : faces) {
-      triangulate_one_monotone_face(pts, f);
+    dbg_faces_ = 0;
+    dbg_sum_face_verts_ = 0;
+
+    std::vector<int> face;
+    face.reserve(32);
+
+    for (int start_u = 0; start_u < n; ++start_u) {
+      const int deg_u = off[start_u + 1] - off[start_u];
+      for (int start_i = 0; start_i < deg_u; ++start_i) {
+        const int start_e = off[start_u] + start_i;
+        if (used[start_e]) continue;
+
+        face.clear();
+        face.push_back(start_u);
+
+        int curr = adj[start_e];
+
+        used[start_e] = 1;
+        ++used_count;
+        int idx_prev = rev_pos[start_e];
+
+        double area2 = 0.0;
+        int prev_v = start_u;
+
+        int iterations = 0;
+        while (curr != start_u && iterations < 2 * m_dir) {
+          face.push_back(curr);
+          area2 += pts[prev_v].x * pts[curr].y - pts[curr].x * pts[prev_v].y;
+
+          const int deg_curr = off[curr + 1] - off[curr];
+          if (idx_prev < 0 || idx_prev >= deg_curr) break;
+
+          const int next_i = (idx_prev - 1 + deg_curr) % deg_curr;
+          const int e2 = off[curr] + next_i;
+          const int next_v = adj[e2];
+
+          if (!used[e2]) {
+            used[e2] = 1;
+            ++used_count;
+          }
+
+          prev_v = curr;
+          curr = next_v;
+          idx_prev = rev_pos[e2];
+          ++iterations;
+        }
+
+        if (curr == start_u && face.size() >= 3 && iterations < 2 * m_dir) {
+          area2 += pts[prev_v].x * pts[start_u].y - pts[start_u].x * pts[prev_v].y;
+          const double a = 0.5 * area2;
+          // Skip outer face / degenerates.
+          if (a > 1e-12) {
+            ++dbg_faces_;
+            dbg_sum_face_verts_ += static_cast<long long>(face.size());
+            triangulate_one_monotone_face(pts, face);
+          }
+        }
+      }
     }
+
+    dbg_used_half_edges_ = used_count;
   }
 
   void triangulate_one_monotone_face(const std::vector<Point>& pts, const std::vector<int>& face) {
@@ -972,30 +1096,32 @@ private:
 
     // Split into two chains from top to bottom along the face cycle.
     const int idx_top = static_cast<int>(std::find(face.begin(), face.end(), top) - face.begin());
-    const int idx_bot = static_cast<int>(std::find(face.begin(), face.end(), bottom) - face.begin());
 
-    std::vector<int> chain1, chain2;
+    tmp_chain1_.clear();
+    tmp_chain2_.clear();
+    tmp_chain1_.reserve(m);
+    tmp_chain2_.reserve(m);
     // Walk forward (CCW) from top to bottom.
     for (int i = idx_top; ; i = (i + 1) % m) {
-      chain1.push_back(face[i]);
+      tmp_chain1_.push_back(face[i]);
       if (face[i] == bottom) break;
     }
     // Walk backward (CW) from top to bottom.
     for (int i = idx_top; ; i = (i - 1 + m) % m) {
-      chain2.push_back(face[i]);
+      tmp_chain2_.push_back(face[i]);
       if (face[i] == bottom) break;
     }
 
     // Determine which is left vs right by comparing next step from top.
-    auto x_next1 = pts[chain1.size() > 1 ? chain1[1] : bottom].x;
-    auto x_next2 = pts[chain2.size() > 1 ? chain2[1] : bottom].x;
+    auto x_next1 = pts[tmp_chain1_.size() > 1 ? tmp_chain1_[1] : bottom].x;
+    auto x_next2 = pts[tmp_chain2_.size() > 1 ? tmp_chain2_[1] : bottom].x;
     const bool chain1_is_left = x_next1 < x_next2;
 
     // Mark chain membership (reuse buffer to avoid per-face allocations).
     for (int v : is_left_touched_) is_left_buf_[v] = 0;
     is_left_touched_.clear();
-    const auto& left_chain = chain1_is_left ? chain1 : chain2;
-    const auto& right_chain = chain1_is_left ? chain2 : chain1;
+    const auto& left_chain = chain1_is_left ? tmp_chain1_ : tmp_chain2_;
+    const auto& right_chain = chain1_is_left ? tmp_chain2_ : tmp_chain1_;
     for (int v : left_chain) {
       if (!is_left_buf_[v]) {
         is_left_buf_[v] = 1;
@@ -1005,67 +1131,68 @@ private:
 
     // Build the sorted-by-y vertex order by merging the two monotone chains
     // (linear time). Both chains include {top, bottom}.
-    std::vector<int> sorted;
-    sorted.reserve(m);
-    sorted.push_back(top);
+    tmp_sorted_.clear();
+    tmp_sorted_.reserve(m);
+    tmp_sorted_.push_back(top);
     std::size_t i = 1, j = 1;
     while (i + 1 < left_chain.size() || j + 1 < right_chain.size()) {
       if (i + 1 >= left_chain.size()) {
-        sorted.push_back(right_chain[j++]);
+        tmp_sorted_.push_back(right_chain[j++]);
         continue;
       }
       if (j + 1 >= right_chain.size()) {
-        sorted.push_back(left_chain[i++]);
+        tmp_sorted_.push_back(left_chain[i++]);
         continue;
       }
       if (better_top(left_chain[i], right_chain[j])) {
-        sorted.push_back(left_chain[i++]);
+        tmp_sorted_.push_back(left_chain[i++]);
       } else {
-        sorted.push_back(right_chain[j++]);
+        tmp_sorted_.push_back(right_chain[j++]);
       }
     }
-    sorted.push_back(bottom);
+    tmp_sorted_.push_back(bottom);
 
     // Stack-based monotone triangulation.
-    std::vector<int> st;
-    st.push_back(sorted[0]);
-    st.push_back(sorted[1]);
+    tmp_stack_.clear();
+    tmp_stack_.reserve(m);
+    tmp_stack_.push_back(tmp_sorted_[0]);
+    tmp_stack_.push_back(tmp_sorted_[1]);
 
     auto same_chain = [&](int a, int b) { return is_left_buf_[a] == is_left_buf_[b]; };
 
     for (int i = 2; i < m - 1; ++i) {
-      const int v = sorted[i];
-      if (!same_chain(v, st.back())) {
+      const int v = tmp_sorted_[i];
+      if (!same_chain(v, tmp_stack_.back())) {
         // Different chains: connect v to all stack vertices.
-        while (static_cast<int>(st.size()) > 1) {
-          const int u = st.back(); st.pop_back();
-          const int w = st.back();
+        while (static_cast<int>(tmp_stack_.size()) > 1) {
+          const int u = tmp_stack_.back(); tmp_stack_.pop_back();
+          const int w = tmp_stack_.back();
           triangles_.push_back({v, u, w});
         }
-        st.pop_back();
-        st.push_back(sorted[i - 1]);
-        st.push_back(v);
+        tmp_stack_.pop_back();
+        tmp_stack_.push_back(tmp_sorted_[i - 1]);
+        tmp_stack_.push_back(v);
       } else {
         // Same chain: pop while diagonal is inside.
-        int u = st.back(); st.pop_back();
-        while (!st.empty()) {
-          const int w = st.back();
+        int u = tmp_stack_.back(); tmp_stack_.pop_back();
+        while (!tmp_stack_.empty()) {
+          const int w = tmp_stack_.back();
           const double c = detail::cross(pts[v], pts[u], pts[w]);
           const bool ok = is_left_buf_[v] ? (c > detail::kEps) : (c < -detail::kEps);
           if (!ok) break;
           triangles_.push_back({v, u, w});
-          u = st.back(); st.pop_back();
+          u = tmp_stack_.back(); tmp_stack_.pop_back();
         }
-        st.push_back(u);
-        st.push_back(v);
+        tmp_stack_.push_back(u);
+        tmp_stack_.push_back(v);
       }
     }
 
     // Connect bottom to remaining stack.
-    const int v = sorted[m - 1];  // bottom
-    while (static_cast<int>(st.size()) > 1) {
-      const int u = st.back(); st.pop_back();
-      const int w = st.back();
+    const int v = tmp_sorted_[m - 1];  // bottom
+    while (static_cast<int>(tmp_stack_.size()) > 1) {
+      const int u = tmp_stack_.back(); tmp_stack_.pop_back();
+      const int w = tmp_stack_.back();
       triangles_.push_back({v, u, w});
     }
   }

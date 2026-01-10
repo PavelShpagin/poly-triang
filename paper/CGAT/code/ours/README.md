@@ -9,7 +9,7 @@ g++ -O3 -std=c++17 reflex_cli.cpp -o reflex_cli
 ## Run
 
 ```bash
-./reflex_cli --input polygon.poly --output out.tri --algo chain
+./reflex_cli --input polygon.poly --output out.tri --algo chain_only
 ```
 
 The program prints a CSV-like line including:
@@ -18,8 +18,8 @@ The program prints a CSV-like line including:
 - `time_ms`
 
 Algorithm selection:
-- `--algo chain` (default): chain-based sweep with hybrid fallback when \(k \ge \max(8, n/8)\)
-- `--algo chain_only`: chain-based sweep only (no fallback)
-- `--algo linked`: edge-based sweep with linked representation (fallback path)
+- `--algo chain_only` (default): chain-based sweep (no fallback)
+- `--algo chain`: alias of `chain_only` (kept for backwards compatibility)
+- `--algo linked`: edge-based sweep with linked representation
 
 

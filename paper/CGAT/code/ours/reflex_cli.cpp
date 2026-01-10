@@ -4,10 +4,9 @@
  * Used by `paper/CGAT/tools/benchmark_cgat.py`.
  *
  * Algorithms:
- * - chain: the paper's chain-based sweep (O(n + k log k)) with a practical
- *          fallback to an edge-based sweep when k is large.
- * - chain_only: chain-based sweep only (no fallback).
- * - linked: edge-based sweep with a linked representation (used for the fallback).
+ * - chain_only: chain-based sweep (no heuristics / no fallback).
+ * - chain: alias of chain_only (kept for backwards compatibility).
+ * - linked: edge-based sweep with a linked representation.
  */
 
 #include <iostream>
@@ -55,7 +54,7 @@ void print_usage(const char* prog) {
 
 int main(int argc, char* argv[]) {
     std::string input_file, output_file;
-    std::string algo = "chain"; // core method (O(n + k log k))
+    std::string algo = "chain_only"; // core method (no heuristics / no fallback)
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--input") == 0 || strcmp(argv[i], "-i") == 0) {
@@ -139,65 +138,6 @@ int main(int argc, char* argv[]) {
     }
 
     if (algo == "chain" || algo == "chain_only") {
-        // Hybrid strategy:
-        // - chain-based method for low-k polygons
-        // - edge-based (linked) fallback for high-k polygons (robust + better constants)
-        //
-        // This matches the paper artifact's intended usage and prevents pathological
-        // cases from aborting benchmark runs.
-        const int thresh_k = std::max(8, n / 8); // n/8 heuristic; min guard for tiny n
-        const bool use_fallback = (algo == "chain" && k_count >= thresh_k);
-
-        if (use_fallback) {
-            std::vector<fast_linked::Point> polygon(n);
-            for (int i = 0; i < n; i++) {
-                polygon[i].x = coords[i].first;
-                polygon[i].y = coords[i].second;
-                polygon[i].index = i;
-            }
-
-            fast_linked::Triangulator triangulator;
-            auto start = std::chrono::high_resolution_clock::now();
-            try {
-                triangulator.triangulate(polygon);
-            } catch (const std::exception& e) {
-                std::cerr << "Error: " << e.what() << "\n";
-                return 2;
-            }
-            auto end = std::chrono::high_resolution_clock::now();
-
-            const auto& triangles = triangulator.triangles;
-            const int num_reflex = triangulator.reflex_count;
-            double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
-
-            // Write output
-            std::ofstream fout(output_file);
-            if (!fout) {
-                std::cerr << "Error: Cannot open output file: " << output_file << "\n";
-                return 1;
-            }
-            fout << "# vertices\n";
-            fout << n << "\n";
-            for (int i = 0; i < n; i++) {
-                fout << polygon[i].x << " " << polygon[i].y << "\n";
-            }
-            fout << "# triangles\n";
-            fout << triangles.size() << "\n";
-            for (const auto& tri : triangles) {
-                fout << tri.v0 << " " << tri.v1 << " " << tri.v2 << "\n";
-            }
-            fout.close();
-
-            std::cout << "reflex,mode=hybrid,impl=linked,vertices=" << n
-                      << ",triangles=" << triangles.size()
-                      << ",expected=" << (n - 2)
-                      << ",reflex_count=" << num_reflex
-                      << ",k_count=" << k_count
-                      << ",thresh_k=" << thresh_k
-                      << ",time_ms=" << elapsed_ms << "\n";
-            return 0;
-        }
-
         std::vector<reflex_tri::Point> polygon(n);
         for (int i = 0; i < n; i++) {
             polygon[i].x = coords[i].first;
@@ -239,16 +179,15 @@ int main(int argc, char* argv[]) {
         }
         fout.close();
 
-        std::cout << "reflex,mode=" << (algo == "chain_only" ? "chain_only" : "chain") << ",vertices=" << n
+        std::cout << "reflex,mode=chain_only,vertices=" << n
                   << ",triangles=" << triangles.size()
                   << ",expected=" << (n - 2)
                   << ",reflex_count=" << num_reflex
                   << ",k_count=" << k_count
-                  << ",thresh_k=" << thresh_k
                   << ",time_ms=" << elapsed_ms << "\n";
         return 0;
     }
 
-    std::cerr << "Error: unknown --algo '" << algo << "' (expected 'chain', 'chain_only', or 'linked')\n";
+    std::cerr << "Error: unknown --algo '" << algo << "' (expected 'chain_only', 'chain', or 'linked')\n";
     return 1;
 }

@@ -220,6 +220,13 @@ def main() -> None:
         poly_path = td / "poly.poly"
         out_path = td / "out.tri"
 
+        # Warm-up: run each binary once (not recorded) to reduce cold-start bias from
+        # code paging / dynamic loader overhead. This is applied uniformly to all algorithms.
+        warm_pts = convex_polygon(128, seed=0)
+        write_poly(warm_pts, poly_path)
+        for _alg, exe in exes.items():
+            _ = run_cli(exe, poly_path, out_path, timeout=timeout)
+
         # Raw CSV
         with open(args.out_raw, "w", encoding="utf-8", newline="") as fraw:
             wraw = csv.writer(fraw)
