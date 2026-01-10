@@ -160,9 +160,19 @@ public:
     // For performance (and to preserve the output-sensitive bound), we do not
     // enforce this via an O(n log n) check here.
 
-    // Count all reflex vertices (paper's r).
+    // Count all reflex vertices (paper's r) and cache convexity flags for reuse in
+    // vertex classification (avoids recomputing cross products in Phase 1).
+    if (static_cast<int>(is_convex_buf_.size()) != n) {
+      is_convex_buf_.assign(n, 0);
+    } else {
+      std::fill(is_convex_buf_.begin(), is_convex_buf_.end(), 0);
+    }
     for (int i = 0; i < n; ++i) {
-      if (detail::is_reflex_vertex_ccw(pts, i)) ++reflex_count_;
+      const int p = (i - 1 + n) % n;
+      const int nx = (i + 1) % n;
+      const double c = detail::cross(pts[p], pts[i], pts[nx]);
+      if (c > detail::kEps) is_convex_buf_[i] = 1;
+      if (c < -detail::kEps) ++reflex_count_;
     }
 
     if (n == 3) {
@@ -375,6 +385,7 @@ private:
   std::vector<PendingRecord> pending_records_;
   std::vector<Triangle> triangles_;
   int reflex_count_ = 0;
+  std::vector<unsigned char> is_convex_buf_;
 #ifdef REFLEX_TRI_TIMING
   double phase1_ms_ = 0.0;
   double phase2_ms_ = 0.0;
@@ -731,8 +742,8 @@ private:
       const int nx = (i + 1) % n;
       const bool p_below = detail::below(pts, p, i);
       const bool nx_below = detail::below(pts, nx, i);
-      const double c = detail::cross(pts[p], pts[i], pts[nx]);
-      const bool convex = c > detail::kEps;
+      // Reuse convexity flag computed in the reflex-count pass.
+      const bool convex = (i < static_cast<int>(is_convex_buf_.size())) && (is_convex_buf_[i] != 0);
       if (p_below && nx_below) {
         types_[i] = convex ? VType::Start : VType::Split;
       } else if (!p_below && !nx_below) {
