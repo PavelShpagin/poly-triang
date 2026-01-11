@@ -110,8 +110,23 @@ The boundary $\partial P$ decomposes uniquely into monotone chains, with consecu
 
 \begin{remark}[Event-complexity parameter $k$]
 \label{rem:k-param}
-Our running time and analysis are stated in terms of $k$, the number of local extrema (equivalently, local maxima). This parameter directly controls the number of sweep events in the chain-based formulation.
+Our running time and analysis are stated in terms of $k$, the number of local maxima (equivalently, local minima) with respect to the sweep direction. This parameter directly controls the number of sweep events in the chain-based formulation.
 \end{remark}
+
+\begin{lemma}[Counting extrema]
+\label{lem:count-extrema}
+Assume general position (no horizontal edges and no equal $y$-coordinates). Let $s,t,e,m$ denote the numbers of start, split, end, and merge vertices of a simple polygon $P$, respectively. Then
+\[
+s = m + 1
+\qquad\text{and}\qquad
+e = t + 1.
+\]
+Consequently, the number of local maxima is
+\[
+k = s + t = t + m + 1,
+\]
+and hence \(k \le r + 1\), since split and merge vertices are reflex and \(t+m \le r\). Moreover, no two local maxima can be adjacent along \(\partial P\), so \(k \le \lfloor n/2 \rfloor\).
+\end{lemma}
 
 %==============================================================================
 \section{Algorithm}
@@ -521,6 +536,9 @@ A simple polygon with $n$ vertices and $k$ local maxima (equivalently $k$ local 
 \item \emph{Edge pointer advancement:} The comparison function advances edge pointers lazily. Each of the $n$ vertices is visited at most once across all advancements (each vertex belongs to exactly one chain and is passed exactly once by that chain's pointer). Total advancement cost: $O(n)$.
 \end{itemize}
 The decomposition phase totals $O(n + k \log k)$ time.
+
+\paragraph{Relationship to reflex-sensitive bounds.}
+By \Cref{lem:count-extrema}, \(k \le r + 1\), and therefore our bound also implies \(O(n + r\log r)\). The advantage of phrasing the running time in terms of \(k\) is that \(k\) can be asymptotically smaller than \(r\) (e.g., when many reflex vertices are regular rather than extrema), yielding a strictly smaller \(k\log k\) term.
 
 \emph{Phase 3 (Triangulation):} Constructing the adjacency structure takes $O(n + |D|) = O(n)$ time by \Cref{lem:diag-bound}. Face extraction and triangulation together take $O(\sum_f |f|)$ time, where the sum is over all faces $f$. Since faces partition the plane inside $P$, and each original edge and diagonal appears in exactly two face boundaries, $\sum_f |f| = 2(n + |D|) = O(n)$.
 
