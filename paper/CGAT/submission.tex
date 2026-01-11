@@ -584,7 +584,7 @@ Our main random-polygon results are included verbatim from the benchmark harness
 
 \input{generated/benchmark_table}
 
-For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{large speedup} over Garey et al.\ in our suite (often tens of $\times$). On dent polygons (very small $k$), we are consistently faster from $n=500$ upward in our suite, with results at $n=100$ being essentially tied. On random polygons, our method is fastest for all $n \ge 500$ in our suite; at $n=100$, Garey et al.\ can be marginally faster due to constant overhead. On star polygons, we are fastest for $n \ge 500$ in our suite, while the $n=100$ case is again essentially tied. Seidel exhibits high constant factors in our experiments.
+For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{large speedup} over Garey et al.\ in our suite (often tens of $\times$). On dent polygons (very small $k$), we are consistently faster from $n=500$ upward in our suite. On random polygons, our method is fastest for all reported sizes. On star polygons, results are close but we are fastest for all reported sizes. Seidel exhibits high constant factors in our experiments.
 
 %==============================================================================
 \section{Discussion}

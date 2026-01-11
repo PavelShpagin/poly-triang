@@ -190,7 +190,7 @@ def run_cli(exe: Path, poly_path: Path, out_path: Path, timeout: int, pin_cpu: O
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sizes", default="100,500,1000,2000,5000,10000")
+    ap.add_argument("--sizes", default="500,1000,2000,5000,10000")
     ap.add_argument("--runs", type=int, default=5, help="Seeds 0..runs-1 per config")
     ap.add_argument("--timeout", type=int, default=10)
     ap.add_argument("--types", default="convex,dent,random,star")

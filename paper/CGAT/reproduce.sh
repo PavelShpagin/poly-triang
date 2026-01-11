@@ -10,7 +10,7 @@ chmod +x "${CGAT_DIR}/build.sh" "${CGAT_DIR}/tools/"*.py
 echo "[2/4] Run benchmarks (paper sizes)..."
 python3 "${CGAT_DIR}/tools/benchmark_cgat.py" \
   --types convex,dent,random,star \
-  --sizes 100,500,1000,2000,5000,10000 \
+  --sizes 500,1000,2000,5000,10000 \
   --runs 5 \
   --timeout 10 \
   --bin-dir "${CGAT_DIR}/bin" \
