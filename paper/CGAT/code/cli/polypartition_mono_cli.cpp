@@ -11,16 +11,20 @@
 // monotone decomposition + triangulation pipeline (Garey et al.).
 
 #include <array>
-#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <time.h>
 
 #include "polypartition.h"
 
-using Clock = std::chrono::high_resolution_clock;
+static double cpu_now_ms() {
+  struct timespec ts;
+  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+  return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+}
 
 namespace {
 
@@ -106,9 +110,9 @@ int main(int argc, char** argv) {
     TPPLPartition partition;
     TPPLPolyList triangles;
 
-    const auto t0 = Clock::now();
+    const double t0 = cpu_now_ms();
     const int ok = partition.Triangulate_MONO(&poly, &triangles);
-    const auto t1 = Clock::now();
+    const double t1 = cpu_now_ms();
 
     if (ok == 0) {
       throw std::runtime_error("Triangulate_MONO failed");
@@ -121,8 +125,7 @@ int main(int argc, char** argv) {
       out_tris.push_back({tri[0].id, tri[1].id, tri[2].id});
     }
 
-    const double elapsed_ms =
-        std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double elapsed_ms = (t1 - t0);
 
     write_tri(args.output, pts, out_tris);
     std::cout << "garey,vertices=" << pts.size()

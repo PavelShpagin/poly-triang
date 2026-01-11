@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 
 #include "seidel.h"
 
@@ -28,9 +29,9 @@ static void print_usage(const char* prog) {
 }
 
 static double now_ms(void) {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return (double)tv.tv_sec * 1000.0 + (double)tv.tv_usec / 1e3;
+  struct timespec ts;
+  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+  return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
 }
 
 int main(int argc, char** argv) {

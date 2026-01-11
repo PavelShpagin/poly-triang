@@ -9,16 +9,20 @@
 //   hertel,vertices=n,triangles=t,time_ms=...
 
 #include <array>
-#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <time.h>
 
 #include "polypartition.h"
 
-using Clock = std::chrono::high_resolution_clock;
+static double cpu_now_ms() {
+  struct timespec ts;
+  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+  return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+}
 
 namespace {
 
@@ -104,7 +108,7 @@ int main(int argc, char** argv) {
     TPPLPartition partition;
     TPPLPolyList convex_parts;
 
-    const auto t0 = Clock::now();
+    const double t0 = cpu_now_ms();
     const int ok = partition.ConvexPartition_HM(&poly, &convex_parts);
     if (ok == 0) {
       throw std::runtime_error("ConvexPartition_HM failed");
@@ -124,9 +128,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    const auto t1 = Clock::now();
-    const double elapsed_ms =
-        std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double t1 = cpu_now_ms();
+    const double elapsed_ms = (t1 - t0);
 
     write_tri(args.output, pts, out_tris);
     std::cout << "hertel,vertices=" << pts.size()

@@ -18,6 +18,7 @@
 #include <exception>
 #include <cmath>
 #include <algorithm>
+#include <time.h>
 
 #include "reflex_fast_linked.hpp"
 #include "reflex_chain_triangulate.hpp"
@@ -97,18 +98,23 @@ int main(int argc, char* argv[]) {
         }
 
         fast_linked::Triangulator triangulator;
-        auto start = std::chrono::high_resolution_clock::now();
+        auto cpu_now_ms = []() -> double {
+            struct timespec ts;
+            clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+            return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+        };
+        const double t0 = cpu_now_ms();
         try {
             triangulator.triangulate(polygon);
         } catch (const std::exception& e) {
             std::cerr << "Error: " << e.what() << "\n";
             return 2;
         }
-        auto end = std::chrono::high_resolution_clock::now();
+        const double t1 = cpu_now_ms();
 
         const auto& triangles = triangulator.triangles;
         const int num_reflex = triangulator.reflex_count;
-        double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
+        double elapsed_ms = (t1 - t0);
 
         // Write output
         std::ofstream fout(output_file);
@@ -147,18 +153,23 @@ int main(int argc, char* argv[]) {
 
         reflex_tri::Triangulator triangulator;
 
-        auto start = std::chrono::high_resolution_clock::now();
+        auto cpu_now_ms = []() -> double {
+            struct timespec ts;
+            clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+            return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+        };
+        const double t0 = cpu_now_ms();
         try {
             triangulator.triangulate(polygon);
         } catch (const std::exception& e) {
             std::cerr << "Error: " << e.what() << "\n";
             return 2;
         }
-        auto end = std::chrono::high_resolution_clock::now();
+        const double t1 = cpu_now_ms();
 
         const auto& triangles = triangulator.debug_triangles();
         const int num_reflex = triangulator.reflex_count();
-        double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
+        double elapsed_ms = (t1 - t0);
 
         // NOTE: chain triangulator may reverse vertices internally to ensure CCW;
         // we therefore write the (possibly reordered) vertices we triangulated.

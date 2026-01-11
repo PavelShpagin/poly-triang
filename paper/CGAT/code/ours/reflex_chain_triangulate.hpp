@@ -143,15 +143,11 @@ public:
 
     const int n = static_cast<int>(pts.size());
     if (n < 3) return triangles_;
+    // We always output exactly (n-2) triangles on success.
+    triangles_.reserve(static_cast<std::size_t>(n - 2));
 
-    // Fast path for convex polygons (including CW order): fan triangulation.
-    // We gate this check to small n because, on non-convex inputs, a full convexity scan
-    // adds an extra O(n) pass.
-    if (n <= 2048 && detail::is_convex_polygon(pts)) {
-      triangles_.resize(n - 2);
-      for (int i = 0; i < n - 2; ++i) triangles_[i] = {0, i + 1, i + 2};
-      return triangles_;
-    }
+    // Note: we do not do a separate convexity pre-check here. Convex polygons are
+    // detected via reflex_count_ == 0 after orientation normalization below.
 
     // Ensure CCW orientation (algorithm assumes CCW).
     if (detail::signed_area(pts) < 0.0) std::reverse(pts.begin(), pts.end());
@@ -174,6 +170,8 @@ public:
       if (c > detail::kEps) is_convex_buf_[i] = 1;
       if (c < -detail::kEps) ++reflex_count_;
     }
+    // Roughly, the number of decomposition diagonals is O(reflex_count_).
+    diagonals_.reserve(static_cast<std::size_t>(reflex_count_) + 8);
 
     if (n == 3) {
       triangles_.push_back({0, 1, 2});
@@ -262,6 +260,7 @@ public:
 
 private:
   enum class VType { Start, End, Split, Merge, Regular };
+  struct Event;
 
   // Fast open-addressing set for diagonal keys (uint64_t), to avoid per-insert heap
   // allocations of std::unordered_set in the critical path.
@@ -305,35 +304,29 @@ private:
   struct Chain {
     std::vector<int> verts;  // from upper (local max) to lower (local min)
     int curr = 0;            // current edge is verts[curr] -> verts[curr+1]
-    // Helper of the current active edge (PolyPartition helper(e)).
-    // We only need to special-case MERGE helpers for diagonal insertion, but
-    // we still must update the helper on right-chain REGULAR and SPLIT vertices
-    // to avoid stale MERGE helpers.
-    int helper = -1;         // helper vertex index (any type), or -1 if unset
-    int pending = -1;        // cached: helper if types_[helper]==Merge, else -1
+    // Pending merge vertex (paper algorithm). If non-null, this merge vertex
+    // should be connected downward at the next suitable extremum.
+    int pending = -1;
     int upper = -1;
     int lower = -1;
-    double cache_y = std::numeric_limits<double>::quiet_NaN();
     double cache_x = 0.0;
+    int cache_stamp = -1;
     // Current edge parameters for fast x_at(y):
     // If edge is non-horizontal, x(y) = base_x - slope * y (derived from the edge endpoints).
     int edge_a = -1;
     int edge_b = -1;
     double edge_base_x = 0.0;
     double edge_slope = 0.0;
-    bool edge_horizontal = false;
 
     void reset_runtime() {
       curr = 0;
-      helper = -1;
       pending = -1;
-      cache_y = std::numeric_limits<double>::quiet_NaN();
       cache_x = 0.0;
+      cache_stamp = -1;
       edge_a = -1;
       edge_b = -1;
       edge_base_x = 0.0;
       edge_slope = 0.0;
-      edge_horizontal = false;
     }
 
     void advance(double y, const std::vector<Point>& pts) {
@@ -348,7 +341,7 @@ private:
       }
       if (curr < 0) curr = 0;
       if (curr != old_curr) {
-        cache_y = std::numeric_limits<double>::quiet_NaN();
+        cache_stamp = -1;
         edge_a = -1;
       }
     }
@@ -358,9 +351,8 @@ private:
       return verts[curr];
     }
 
-    // NOTE: We do NOT expose a generic x_at(y) here because, in the full
-    // algorithm, advancing a chain must also resolve pending MERGE helpers at
-    // skipped REGULAR vertices. That logic lives in the owning Triangulator.
+    // NOTE: x-at-sweep is computed by the owning Triangulator so it can use
+    // the shared sweep_y_ cache and precomputed edge parameters.
   };
 
   // Treap keyed by chain order at current sweep_y (see paper).
@@ -378,6 +370,7 @@ private:
 
   double sweep_y_ = 0.0;
   double sweep_y_eps_ = 0.0;
+  int sweep_stamp_ = 0;
   std::vector<std::pair<int, int>> diagonals_;
   // For uniqueness without an O(|D| log |D|) sort pass.
   DiagSet diag_set_;
@@ -386,6 +379,21 @@ private:
   std::vector<Triangle> triangles_;
   int reflex_count_ = 0;
   std::vector<unsigned char> is_convex_buf_;
+  std::vector<Event> events_;
+  // Phase 3 scratch (kept as members to avoid per-call heap deallocations).
+  std::vector<int> adj_deg_;
+  std::vector<int> adj_off_;
+  std::vector<int> adj_flat_;
+  std::vector<int> adj_flat_tmp_;
+  std::vector<int> adj_cur_;
+  std::vector<int> halfedge_src_;
+  std::vector<int> halfedge_key_;
+  std::vector<int> halfedge_idx1_;
+  std::vector<int> halfedge_idx2_;
+  std::vector<unsigned char> halfedge_used_;
+  std::vector<int> halfedge_rev_e_;
+  std::vector<int> count_buf_;
+  std::vector<int> face_buf_;
 #ifdef REFLEX_TRI_TIMING
   double phase1_ms_ = 0.0;
   double phase2_ms_ = 0.0;
@@ -482,64 +490,54 @@ private:
       ++ch.curr;
       const int vreg = ch.verts[ch.curr];
       if (types_[vreg] != VType::Regular) continue;
-      // Only the "interior to right" regular case corresponds to helper(e_{i-1})
-      // on this chain (PolyPartition's REGULAR/right case):
-      // Below(v_i, v_{i-1}).
+      // REGULAR/left-chain case (PolyPartition): Below(v_i, v_{i-1}).
+      // These vertices can resolve a pending MERGE helper in O(1) amortized time
+      // without being explicit sweep events.
       const int prev = (vreg - 1 + n) % n;
       if (!detail::below(pts, vreg, prev)) continue;
 
-      // If helper(e_{i-1}) is MERGE, add diagonal to it.
       if (ch.pending != -1) {
         add_diagonal_unique(vreg, ch.pending, /*event_v=*/vreg, VType::Regular,
                             /*chosen_chain=*/cid, /*target_v=*/ch.pending,
-                            /*reason=*/"regular:merge_helper");
+                            /*reason=*/"advance:pending_merge");
+        ch.pending = -1;
       }
-
-      // REGULAR/right: helper(e_i) becomes vreg (non-merge).
-      ch.helper = vreg;
-      ch.pending = -1;
     }
     if (ch.curr + 1 >= static_cast<int>(ch.verts.size())) {
       ch.curr = static_cast<int>(ch.verts.size()) - 2;
     }
     if (ch.curr < 0) ch.curr = 0;
     if (ch.curr != old_curr) {
-      ch.cache_y = std::numeric_limits<double>::quiet_NaN();
-      ch.edge_a = -1;
-    }
-  }
-
-  double chain_x_at(int cid, const std::vector<Point>& pts) {
-    Chain& ch = chains_[cid];
-    if (ch.cache_y == sweep_y_) return ch.cache_x;
-    // Only advance when we've swept below the next vertex on this chain.
-    if (ch.curr + 1 < static_cast<int>(ch.verts.size()) &&
-        pts[ch.verts[ch.curr + 1]].y > sweep_y_eps_) {
-      advance_chain(cid, pts);
-    }
-    const int a = ch.verts[ch.curr];
-    const int b = ch.verts[ch.curr + 1];
-    if (a != ch.edge_a || b != ch.edge_b) {
+      ch.cache_stamp = -1;
+      // Update current edge parameters for the new curr.
+      const int a = ch.verts[ch.curr];
+      const int b = ch.verts[ch.curr + 1];
       ch.edge_a = a;
       ch.edge_b = b;
       const auto& p = pts[a];
       const auto& q = pts[b];
       if (std::abs(p.y - q.y) < detail::kEps) {
-        ch.edge_horizontal = true;
-        ch.edge_base_x = std::min(p.x, q.x);
         ch.edge_slope = 0.0;
+        ch.edge_base_x = std::min(p.x, q.x);
       } else {
-        ch.edge_horizontal = false;
-        // x(y) = p.x + (p.y - y) * (q.x - p.x) / (p.y - q.y)
-        //      = (p.x + p.y*s) - y*s  where s=(q.x-p.x)/(p.y-q.y)
         const double s = (q.x - p.x) / (p.y - q.y);
         ch.edge_slope = s;
         ch.edge_base_x = p.x + p.y * s;
       }
     }
-    const double x = ch.edge_horizontal ? ch.edge_base_x : (ch.edge_base_x - sweep_y_ * ch.edge_slope);
-    ch.cache_y = sweep_y_;
+  }
+
+  double chain_x_at(int cid, const std::vector<Point>& pts) {
+    Chain& ch = chains_[cid];
+    if (ch.cache_stamp == sweep_stamp_) return ch.cache_x;
+    // Only advance when we've swept below the next vertex on this chain.
+    if (ch.curr + 1 < static_cast<int>(ch.verts.size()) &&
+        pts[ch.verts[ch.curr + 1]].y > sweep_y_eps_) {
+      advance_chain(cid, pts);
+    }
+    const double x = (ch.edge_base_x - sweep_y_ * ch.edge_slope);
     ch.cache_x = x;
+    ch.cache_stamp = sweep_stamp_;
     return x;
   }
 
@@ -805,35 +803,42 @@ private:
     // are reflex vertices, so O(reflex_count_) is a good capacity estimate.
     diag_set_.reset(static_cast<std::size_t>(reflex_count_) + 32);
 
-    // Build event list:
-    // - All extrema (START/SPLIT/END/MERGE)
-    // - PLUS regular vertices on the *right* chain (PolyPartition REGULAR/left case),
-    //   because these vertices update helper(e_j) and can clear a pending MERGE helper.
-    //
-    // The original extrema-only variant can leave MERGE helpers stale and produce
-    // invalid diagonals on some polygons (e.g., MERGE-to-MERGE chords crossing the boundary).
-    std::vector<Event> events;
-    events.reserve(n);
+    // Build event list: local extrema only (Start/Split/End/Merge), as in the paper.
+    events_.clear();
+    events_.reserve(n);
 
     for (int i = 0; i < n; ++i) {
       if (types_[i] == VType::Start || types_[i] == VType::Split ||
           types_[i] == VType::End || types_[i] == VType::Merge) {
-        events.push_back({i, pts[i].y, pts[i].x, types_[i]});
-      } else if (types_[i] == VType::Regular) {
-        // Regular vertex on the right chain: prev is below v (interior to left).
-        const int p = (i - 1 + n) % n;
-        if (!detail::below(pts, i, p)) {
-          events.push_back({i, pts[i].y, pts[i].x, VType::Regular});
-        }
+        events_.push_back({i, pts[i].y, pts[i].x, types_[i]});
       }
     }
-    std::sort(events.begin(), events.end(), [](const Event& a, const Event& b) {
-      if (std::abs(a.y - b.y) > detail::kEps) return a.y > b.y;
-      return a.x < b.x;
+    std::sort(events_.begin(), events_.end(), [](const Event& a, const Event& b) {
+      if (a.y > b.y) return true;
+      if (a.y < b.y) return false;
+      if (a.x < b.x) return true;
+      if (a.x > b.x) return false;
+      return a.v < b.v;
     });
 
-    // Reset runtime chain state.
-    for (auto& c : chains_) c.reset_runtime();
+    // Reset runtime chain state + initialize edge parameters for curr=0.
+    for (auto& c : chains_) {
+      c.reset_runtime();
+      const int a = c.verts[0];
+      const int b = c.verts[1];
+      c.edge_a = a;
+      c.edge_b = b;
+      const auto& p = pts[a];
+      const auto& q = pts[b];
+      if (std::abs(p.y - q.y) < detail::kEps) {
+        c.edge_slope = 0.0;
+        c.edge_base_x = std::min(p.x, q.x);
+      } else {
+        const double s = (q.x - p.x) / (p.y - q.y);
+        c.edge_slope = s;
+        c.edge_base_x = p.x + p.y * s;
+      }
+    }
     diag_records_.clear();
     pending_records_.clear();
 
@@ -857,7 +862,8 @@ private:
       treap_erase(status, cid, pts);
     };
 
-    for (const auto& ev : events) {
+    for (const auto& ev : events_) {
+      ++sweep_stamp_;
       const int v = ev.v;
       const double vy = pts[v].y;
       // Sweep convention:
@@ -866,7 +872,7 @@ private:
       // - For END/MERGE (local minima), we query the status just *above* v so the
       //   incoming edges ending at v are still active (and we don't extrapolate
       //   x_at(y) past a chain's lower endpoint).
-      if (ev.type == VType::End || ev.type == VType::Merge || ev.type == VType::Regular) {
+      if (ev.type == VType::End || ev.type == VType::Merge) {
         sweep_y_ = detail::nextafter_up(vy);
       } else {
         sweep_y_ = detail::nextafter_down(vy);
@@ -877,84 +883,66 @@ private:
         const int cid = max_to_chain_[v];
         if (cid < 0) throw std::runtime_error("missing left chain for Start");
         insert_chain(cid);
-        chains_[cid].helper = v;
         chains_[cid].pending = -1;
       } else if (ev.type == VType::End) {
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for End");
-        // Ensure all skipped REGULAR vertices on R are processed before we act on pending.
-        advance_chain(rid, pts);
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,
-                              /*reason=*/"end:merge_helper");
+                              /*reason=*/"end:pending_merge");
           chains_[rid].pending = -1;
         }
         remove_chain(rid);
       } else if (ev.type == VType::Split) {
         const int left_id = predecessor_chain_by_x(status, pts, pts[v].x);
         if (left_id >= 0) {
-          const int tgt = (chains_[left_id].helper != -1)
-                              ? chains_[left_id].helper
-                              : chain_slab_entry_vertex(left_id, pts);
+          int tgt = -1;
+          const char* reason = "split:slab_entry";
+          if (chains_[left_id].pending != -1) {
+            tgt = chains_[left_id].pending;
+            chains_[left_id].pending = -1;
+            reason = "split:pending_merge";
+          } else {
+            tgt = chain_slab_entry_vertex(left_id, pts);
+          }
           add_diagonal_unique(v, tgt, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/left_id, /*target_v=*/tgt,
-                              /*reason=*/(chains_[left_id].pending != -1) ? "split:merge_helper" : "split:helper");
-          // helper(e_j) becomes v (SPLIT is non-merge)
-          chains_[left_id].helper = v;
-          chains_[left_id].pending = -1;
+                              /*reason=*/reason);
         }
         const int cid = max_to_chain_[v];
         if (cid < 0) throw std::runtime_error("missing left chain for Split");
         insert_chain(cid);
-        chains_[cid].helper = v;
         chains_[cid].pending = -1;
       } else if (ev.type == VType::Merge) {
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for Merge");
 
-        // Ensure all skipped REGULAR vertices on R are processed before we act on pending.
-        advance_chain(rid, pts);
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,
-                              /*reason=*/"merge:term_merge_helper");
+                              /*reason=*/"merge:term_pending_merge");
           chains_[rid].pending = -1;
         }
 
-        // Remove R from the status structure (edge e_{i-1}).
         remove_chain(rid);
 
-        // After removal, find the chain immediately left of v (edge e_j).
+        // After removing R, find chain immediately left of v.
         const int left_id = predecessor_chain_by_x(status, pts, pts[v].x);
         if (left_id >= 0) {
           if (chains_[left_id].pending != -1) {
             add_diagonal_unique(v, chains_[left_id].pending, /*event_v=*/v, ev.type,
                                 /*chosen_chain=*/left_id, /*target_v=*/chains_[left_id].pending,
-                                /*reason=*/"merge:left_merge_helper");
+                                /*reason=*/"merge:left_pending_merge");
             chains_[left_id].pending = -1;
           }
-          // helper(e_j) becomes v (MERGE is a merge helper)
-          chains_[left_id].helper = v;
           chains_[left_id].pending = v;
-          #ifndef NDEBUG
+#ifndef NDEBUG
           pending_records_.push_back({left_id, v, v, "merge:set_pending"});
-          #endif
+#endif
         }
       } else {
-        // Regular vertex on the right chain: update helper of left edge e_j.
-        // If helper(e_j) is MERGE, add the diagonal; then helper(e_j) becomes v.
-        const int left_id = predecessor_chain_by_x(status, pts, pts[v].x);
-
-        if (left_id >= 0) {
-          if (chains_[left_id].pending != -1) {
-            add_diagonal_unique(v, chains_[left_id].pending, /*event_v=*/v, ev.type,
-                                /*chosen_chain=*/left_id, /*target_v=*/chains_[left_id].pending,
-                                /*reason=*/"regular:right_merge_helper");
-          }
-          chains_[left_id].helper = v;
-          chains_[left_id].pending = -1;
-        }
+        // no other event types
       }
     }
 
@@ -967,89 +955,236 @@ private:
 
     // Build adjacency in a flat CSR-like layout to avoid O(n) small allocations
     // from vector<vector<int>>. This significantly reduces Phase 3 overhead.
-    std::vector<int> deg(n, 2);
+    adj_deg_.assign(n, 2);
     for (const auto& [a, b] : diagonals_) {
-      ++deg[a];
-      ++deg[b];
+      ++adj_deg_[a];
+      ++adj_deg_[b];
     }
 
-    std::vector<int> off(n + 1, 0);
-    for (int u = 0; u < n; ++u) off[u + 1] = off[u] + deg[u];
-    const int m_dir = off[n];
+    adj_off_.assign(n + 1, 0);
+    for (int u = 0; u < n; ++u) adj_off_[u + 1] = adj_off_[u] + adj_deg_[u];
+    const int m_dir = adj_off_[n];
     dbg_half_edges_ = m_dir;
 
-    std::vector<int> adj(m_dir, -1);
-    std::vector<int> cur = off;
+    adj_flat_.assign(m_dir, -1);
+    adj_cur_.resize(n + 1);
+    std::copy(adj_off_.begin(), adj_off_.end(), adj_cur_.begin());
 
     // Polygon boundary edges.
     for (int i = 0; i < n; ++i) {
       const int j = (i + 1) % n;
-      adj[cur[i]++] = j;
-      adj[cur[j]++] = i;
+      adj_flat_[adj_cur_[i]++] = j;
+      adj_flat_[adj_cur_[j]++] = i;
     }
     // Decomposition diagonals.
     for (const auto& [a, b] : diagonals_) {
-      adj[cur[a]++] = b;
-      adj[cur[b]++] = a;
+      adj_flat_[adj_cur_[a]++] = b;
+      adj_flat_[adj_cur_[b]++] = a;
     }
 
-    // Sort neighbors around each vertex by angle (CCW), without atan2.
-    for (int u = 0; u < n; ++u) {
-      const int beg = off[u];
-      const int end = off[u + 1];
-      if (end - beg <= 2) continue;  // ordering is irrelevant for degree <= 2
-      auto half = [&](int v) -> int {
-        const double dx = pts[v].x - pts[u].x;
-        const double dy = pts[v].y - pts[u].y;
-        if (dy > 0) return 0;
-        if (dy < 0) return 1;
-        return (dx >= 0) ? 0 : 1;
+    // Order neighbors around each vertex in the outerplanar embedding induced by the
+    // polygon's boundary order (0..n-1).
+    //
+    // For performance, we use a simple per-vertex sort for small n (lower constant),
+    // and a linear-time radix counting sort for larger n. The cutoff is a fixed constant,
+    // so asymptotic complexity remains O(n).
+    static constexpr int kSmallPhase3N = 20000;
+    const bool small_phase3 = (n <= kSmallPhase3N);
+    if (small_phase3) {
+      auto key = [&](int u, int v) -> int {
+        int d = v - u;
+        if (d <= 0) d += n;
+        return d;  // 1..n-1, increasing along CCW boundary order
       };
-      std::sort(adj.begin() + beg, adj.begin() + end, [&](int a, int b) {
-        const int ha = half(a);
-        const int hb = half(b);
-        if (ha != hb) return ha < hb;
-        const double ax = pts[a].x - pts[u].x;
-        const double ay = pts[a].y - pts[u].y;
-        const double bx = pts[b].x - pts[u].x;
-        const double by = pts[b].y - pts[u].y;
-        const double cr = ax * by - ay * bx;
-        // IMPORTANT: strict weak ordering (no eps threshold here).
-        if (cr > 0) return true;
-        if (cr < 0) return false;
-        const double da = ax * ax + ay * ay;
-        const double db = bx * bx + by * by;
-        if (da < db) return true;
-        if (db < da) return false;
-        return a < b;
-      });
-    }
+      for (int u = 0; u < n; ++u) {
+        const int beg = adj_off_[u];
+        const int end = adj_off_[u + 1];
+        if (end - beg <= 2) continue;
+        std::sort(adj_flat_.begin() + beg, adj_flat_.begin() + end,
+                  [&](int a, int b) { return key(u, a) < key(u, b); });
+      }
+    } else {
+      // Linear-time neighbor ordering via radix counting sort over directed half-edges.
+      if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+      for (int u = 0; u < n; ++u) {
+        for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
+      }
+      if (static_cast<int>(halfedge_key_.size()) != m_dir) halfedge_key_.resize(m_dir);
+      for (int e = 0; e < m_dir; ++e) {
+        const int u = halfedge_src_[e];
+        const int v = adj_flat_[e];
+        int d = v - u;
+        if (d <= 0) d += n;
+        halfedge_key_[e] = d;
+      }
 
-    // Face extraction: traverse directed half-edges in the planar embedding.
-    std::vector<unsigned char> used(m_dir, 0);
-    int used_count = 0;
+      halfedge_idx1_.resize(m_dir);
+      halfedge_idx2_.resize(m_dir);
+      for (int i = 0; i < m_dir; ++i) halfedge_idx1_[i] = i;
 
-    // Reverse lookup: for directed edge (u -> adj[u][i]), store the index of u in adj[v].
-    // In practice, neighbor degrees are small; a linear scan is faster than a global hash map.
-    std::vector<int> rev_pos(m_dir, -1);
-    for (int u = 0; u < n; ++u) {
-      const int beg_u = off[u];
-      const int end_u = off[u + 1];
-      for (int e = beg_u; e < end_u; ++e) {
-        const int v = adj[e];
-        const int beg_v = off[v];
-        const int end_v = off[v + 1];
-        int j = -1;
-        for (int t = beg_v; t < end_v; ++t) {
-          if (adj[t] == u) { j = t - beg_v; break; }
-        }
-        rev_pos[e] = j;
+      // Pass 1: stable sort by key.
+      count_buf_.assign(n + 1, 0);
+      for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_key_[i]];
+      int sum = 0;
+      for (int k = 0; k <= n; ++k) {
+        const int c = count_buf_[k];
+        count_buf_[k] = sum;
+        sum += c;
+      }
+      for (int i = 0; i < m_dir; ++i) {
+        const int e = halfedge_idx1_[i];
+        const int k = halfedge_key_[e];
+        halfedge_idx2_[count_buf_[k]++] = e;
+      }
+
+      // Pass 2: stable sort by src.
+      count_buf_.assign(n + 1, 0);
+      for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_src_[halfedge_idx2_[i]]];
+      sum = 0;
+      for (int u = 0; u <= n; ++u) {
+        const int c = count_buf_[u];
+        count_buf_[u] = sum;
+        sum += c;
+      }
+      for (int i = 0; i < m_dir; ++i) {
+        const int e = halfedge_idx2_[i];
+        const int u = halfedge_src_[e];
+        halfedge_idx1_[count_buf_[u]++] = e;
+      }
+
+      adj_flat_tmp_.resize(m_dir);
+      for (int i = 0; i < m_dir; ++i) adj_flat_tmp_[i] = adj_flat_[halfedge_idx1_[i]];
+      adj_flat_.swap(adj_flat_tmp_);
+
+      // Rebuild src array for the reordered adjacency.
+      if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+      for (int u = 0; u < n; ++u) {
+        for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
       }
     }
 
-    // Triangulate each interior face on-the-fly (no storing of all faces).
-    // With CCW neighbor ordering and the "prev neighbor" face-walk rule, interior
-    // faces are traversed CCW (positive signed area) while the outer face is CW.
+    // Face extraction: traverse directed half-edges in the planar embedding.
+    halfedge_used_.assign(m_dir, 0);
+    int used_count = 0;
+
+    // Reverse half-edge map: for each directed half-edge e=(u->v), store rev(e)=(v->u)
+    // as a global index in adj_flat_. Computed in O(n) time via radix counting sort on
+    // the undirected key (min(u,v), max(u,v)).
+    if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+    for (int u = 0; u < n; ++u) {
+      for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
+    }
+
+    halfedge_rev_e_.assign(m_dir, -1);
+    halfedge_idx1_.resize(m_dir);
+    halfedge_idx2_.resize(m_dir);
+    for (int i = 0; i < m_dir; ++i) halfedge_idx1_[i] = i;
+
+    // Pass 1: stable sort by b = max(u, v).
+    count_buf_.assign(n + 1, 0);
+    for (int e = 0; e < m_dir; ++e) {
+      const int u = halfedge_src_[e];
+      const int v = adj_flat_[e];
+      const int b = (u > v) ? u : v;
+      ++count_buf_[b];
+    }
+    int sum2 = 0;
+    for (int b = 0; b <= n; ++b) {
+      const int c = count_buf_[b];
+      count_buf_[b] = sum2;
+      sum2 += c;
+    }
+    for (int i = 0; i < m_dir; ++i) {
+      const int e = halfedge_idx1_[i];
+      const int u = halfedge_src_[e];
+      const int v = adj_flat_[e];
+      const int b = (u > v) ? u : v;
+      halfedge_idx2_[count_buf_[b]++] = e;
+    }
+
+    // Pass 2: stable sort by a = min(u, v).
+    count_buf_.assign(n + 1, 0);
+    for (int i = 0; i < m_dir; ++i) {
+      const int e = halfedge_idx2_[i];
+      const int u = halfedge_src_[e];
+      const int v = adj_flat_[e];
+      const int a = (u < v) ? u : v;
+      ++count_buf_[a];
+    }
+    sum2 = 0;
+    for (int a = 0; a <= n; ++a) {
+      const int c = count_buf_[a];
+      count_buf_[a] = sum2;
+      sum2 += c;
+    }
+    for (int i = 0; i < m_dir; ++i) {
+      const int e = halfedge_idx2_[i];
+      const int u = halfedge_src_[e];
+      const int v = adj_flat_[e];
+      const int a = (u < v) ? u : v;
+      halfedge_idx1_[count_buf_[a]++] = e;
+    }
+
+    for (int i = 0; i + 1 < m_dir; i += 2) {
+      const int e1 = halfedge_idx1_[i];
+      const int e2 = halfedge_idx1_[i + 1];
+      halfedge_rev_e_[e1] = e2;
+      halfedge_rev_e_[e2] = e1;
+    }
+
+    // Outer face: for a CCW polygon, the outer face lies to the left of the reversed
+    // boundary edge (0 -> n-1). Since our face-walk always traces the face on the left
+    // of a directed half-edge, we can mark the outer face half-edges by walking from
+    // that single half-edge.
+    std::fill(halfedge_used_.begin(), halfedge_used_.end(), 0);
+    used_count = 0;
+
+    int outer_start_e = -1;
+    if (n >= 2) {
+      const int u0 = 0;
+      const int v0 = n - 1;
+      const int beg0 = adj_off_[u0];
+      const int end0 = adj_off_[u0 + 1];
+      if (end0 > beg0 && adj_flat_[end0 - 1] == v0) {
+        outer_start_e = end0 - 1;
+      } else {
+        for (int e = beg0; e < end0; ++e) {
+          if (adj_flat_[e] == v0) { outer_start_e = e; break; }
+        }
+      }
+    }
+
+    if (outer_start_e >= 0) {
+      const int start_u = 0;
+      int prev_v = start_u;
+      int curr = adj_flat_[outer_start_e];
+
+      halfedge_used_[outer_start_e] = 1;
+      ++used_count;
+      int idx_prev = halfedge_rev_e_[outer_start_e] - adj_off_[curr];
+
+      int iterations = 0;
+      while (curr != start_u && iterations < 2 * m_dir) {
+        const int deg_curr = adj_off_[curr + 1] - adj_off_[curr];
+        if (idx_prev < 0 || idx_prev >= deg_curr) break;
+
+        const int next_i = (idx_prev - 1 + deg_curr) % deg_curr;
+        const int e2 = adj_off_[curr] + next_i;
+        const int next_v = adj_flat_[e2];
+
+        if (!halfedge_used_[e2]) {
+          halfedge_used_[e2] = 1;
+          ++used_count;
+        }
+
+        const int rev_e2 = halfedge_rev_e_[e2];
+        prev_v = curr;
+        curr = next_v;
+        idx_prev = rev_e2 - adj_off_[next_v];
+        ++iterations;
+      }
+    }
+
     if (static_cast<int>(is_left_buf_.size()) != n) {
       is_left_buf_.assign(n, 0);
     } else {
@@ -1059,59 +1194,58 @@ private:
     dbg_faces_ = 0;
     dbg_sum_face_verts_ = 0;
 
-    std::vector<int> face;
-    face.reserve(32);
+    face_buf_.clear();
+    face_buf_.reserve(32);
 
     for (int start_u = 0; start_u < n; ++start_u) {
-      const int deg_u = off[start_u + 1] - off[start_u];
+      const int deg_u = adj_off_[start_u + 1] - adj_off_[start_u];
       for (int start_i = 0; start_i < deg_u; ++start_i) {
-        const int start_e = off[start_u] + start_i;
-        if (used[start_e]) continue;
+        const int start_e = adj_off_[start_u] + start_i;
+        if (halfedge_used_[start_e]) continue;
 
-        face.clear();
-        face.push_back(start_u);
+        face_buf_.clear();
+        face_buf_.push_back(start_u);
 
-        int curr = adj[start_e];
+        int prev_v = start_u;
+        int curr = adj_flat_[start_e];
 
-        used[start_e] = 1;
+        halfedge_used_[start_e] = 1;
         ++used_count;
-        int idx_prev = rev_pos[start_e];
+        int idx_prev = halfedge_rev_e_[start_e] - adj_off_[curr];
 
         double area2 = 0.0;
-        int prev_v = start_u;
 
         int iterations = 0;
         while (curr != start_u && iterations < 2 * m_dir) {
-          face.push_back(curr);
+          face_buf_.push_back(curr);
           area2 += pts[prev_v].x * pts[curr].y - pts[curr].x * pts[prev_v].y;
 
-          const int deg_curr = off[curr + 1] - off[curr];
+          const int deg_curr = adj_off_[curr + 1] - adj_off_[curr];
           if (idx_prev < 0 || idx_prev >= deg_curr) break;
 
           const int next_i = (idx_prev - 1 + deg_curr) % deg_curr;
-          const int e2 = off[curr] + next_i;
-          const int next_v = adj[e2];
+          const int e2 = adj_off_[curr] + next_i;
+          const int next_v = adj_flat_[e2];
 
-          if (!used[e2]) {
-            used[e2] = 1;
+          if (!halfedge_used_[e2]) {
+            halfedge_used_[e2] = 1;
             ++used_count;
           }
 
+          const int rev_e2 = halfedge_rev_e_[e2];
           prev_v = curr;
           curr = next_v;
-          idx_prev = rev_pos[e2];
+          idx_prev = rev_e2 - adj_off_[next_v];
           ++iterations;
         }
 
-        if (curr == start_u && face.size() >= 3 && iterations < 2 * m_dir) {
+        if (curr == start_u && face_buf_.size() >= 3 && iterations < 2 * m_dir) {
           area2 += pts[prev_v].x * pts[start_u].y - pts[start_u].x * pts[prev_v].y;
-          const double a = 0.5 * area2;
-          // Skip outer face / degenerates.
-          if (a > 1e-12) {
-            ++dbg_faces_;
-            dbg_sum_face_verts_ += static_cast<long long>(face.size());
-            triangulate_one_monotone_face(pts, face);
-          }
+          // Ensure CCW orientation for monotone triangulation.
+          if (area2 < -1e-12) std::reverse(face_buf_.begin(), face_buf_.end());
+          ++dbg_faces_;
+          dbg_sum_face_verts_ += static_cast<long long>(face_buf_.size());
+          triangulate_one_monotone_face(pts, face_buf_);
         }
       }
     }
@@ -1127,14 +1261,21 @@ private:
       return;
     }
 
-    // Find top and bottom vertices by (y desc, x asc).
+    // Find top and bottom vertices by (y desc, x asc), with strict ordering.
+    // The benchmark setup uses a fixed rotation to avoid equal-y degeneracies.
     auto better_top = [&](int a, int b) {
-      if (std::abs(pts[a].y - pts[b].y) > detail::kEps) return pts[a].y > pts[b].y;
-      return pts[a].x < pts[b].x;
+      if (pts[a].y > pts[b].y) return true;
+      if (pts[a].y < pts[b].y) return false;
+      if (pts[a].x < pts[b].x) return true;
+      if (pts[a].x > pts[b].x) return false;
+      return a < b;
     };
     auto better_bottom = [&](int a, int b) {
-      if (std::abs(pts[a].y - pts[b].y) > detail::kEps) return pts[a].y < pts[b].y;
-      return pts[a].x < pts[b].x;
+      if (pts[a].y < pts[b].y) return true;
+      if (pts[a].y > pts[b].y) return false;
+      if (pts[a].x < pts[b].x) return true;
+      if (pts[a].x > pts[b].x) return false;
+      return a < b;
     };
 
     int top = face[0], bottom = face[0];

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import os
 import random
 import statistics
 import subprocess
@@ -154,15 +155,25 @@ class RunResult:
     reflex_count: Optional[int] = None
 
 
-def run_cli(exe: Path, poly_path: Path, out_path: Path, timeout: int) -> Optional[RunResult]:
+def run_cli(exe: Path, poly_path: Path, out_path: Path, timeout: int, pin_cpu: Optional[int]) -> Optional[RunResult]:
     if not exe.exists():
         return None
     try:
+        def _pin_to_cpu() -> None:
+            # Best-effort CPU pinning to reduce scheduling noise. This is applied
+            # uniformly to all algorithms when enabled.
+            try:
+                os.sched_setaffinity(0, {int(pin_cpu)})  # type: ignore[arg-type]
+            except Exception:
+                pass
+
+        preexec = _pin_to_cpu if (pin_cpu is not None and hasattr(os, "sched_setaffinity")) else None
         proc = subprocess.run(
             [str(exe), "--input", str(poly_path), "--output", str(out_path)],
             capture_output=True,
             text=True,
             timeout=timeout,
+            preexec_fn=preexec,
         )
         if proc.returncode != 0:
             return None
@@ -186,11 +197,13 @@ def main() -> None:
     ap.add_argument("--bin-dir", type=Path, default=ROOT / "bin")
     ap.add_argument("--out-raw", type=Path, default=ROOT / "generated" / "benchmark_results_raw.csv")
     ap.add_argument("--out-csv", type=Path, default=ROOT / "generated" / "benchmark_results.csv")
+    ap.add_argument("--pin-cpu", type=int, default=None, help="Pin each run to a single CPU core (Linux only)")
     args = ap.parse_args()
 
     sizes = [int(s.strip()) for s in args.sizes.split(",") if s.strip()]
     runs = args.runs
     timeout = args.timeout
+    pin_cpu = args.pin_cpu
 
     generators = {
         "convex": convex_polygon,
@@ -225,7 +238,7 @@ def main() -> None:
         warm_pts = convex_polygon(128, seed=0)
         write_poly(warm_pts, poly_path)
         for _alg, exe in exes.items():
-            _ = run_cli(exe, poly_path, out_path, timeout=timeout)
+            _ = run_cli(exe, poly_path, out_path, timeout=timeout, pin_cpu=pin_cpu)
 
         # Raw CSV
         with open(args.out_raw, "w", encoding="utf-8", newline="") as fraw:
@@ -238,13 +251,23 @@ def main() -> None:
 
             for ptype, gen in generators.items():
                 for n in sizes:
+                    polys = []
                     for seed in range(runs):
                         pts = gen(n, seed)
-                        k_count = count_local_maxima_k(pts)
-                        write_poly(pts, poly_path)
+                        polys.append((seed, pts, count_local_maxima_k(pts)))
 
-                        for alg, exe in exes.items():
-                            res = run_cli(exe, poly_path, out_path, timeout=timeout)
+                    # Deterministic per-config algorithm order (block-by-block), running the fast
+                    # algorithms before the slow baselines to avoid cross-seed thermal/caching
+                    # interference from extremely slow runs.
+                    rng = random.Random(1000003 * n + 17 * sum(ord(c) for c in ptype))
+                    fast = [("ours", exes["ours"]), ("garey", exes["garey"])]
+                    slow = [("seidel", exes["seidel"]), ("hertel", exes["hertel"])]
+                    rng.shuffle(fast)
+                    rng.shuffle(slow)
+                    for alg, exe in (fast + slow):
+                        for (seed, pts, k_count) in polys:
+                            write_poly(pts, poly_path)
+                            res = run_cli(exe, poly_path, out_path, timeout=timeout, pin_cpu=pin_cpu)
                             if res and res.triangles == n - 2:
                                 wraw.writerow([ptype, n, seed, k_count, alg, f"{res.time_ms:.6f}", res.triangles, res.reflex_count or ""])
                                 agg_times.setdefault((ptype, n, alg), []).append(res.time_ms)

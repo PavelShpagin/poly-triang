@@ -8,3 +8,19 @@
 *.lof
 *.lot
 
+# Build outputs
+bin/
+
+# Python cache
+__pycache__/
+
+# Local debug/experimental binaries (not part of submission)
+code/ours/*
+!code/ours/reflex_chain_triangulate.hpp
+!code/ours/reflex_fast_linked.hpp
+!code/ours/reflex_cli.cpp
+!code/ours/README.md
+
+# Local helper scripts (not part of submission)
+*.py
+!tools/*.py

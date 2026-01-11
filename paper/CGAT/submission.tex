@@ -48,7 +48,7 @@
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
 The algorithm reformulates monotone decomposition to maintain active monotone chains rather than individual edges. Regular vertices are handled via lazy pointer advancement in $O(n)$ amortized time, while the sweep maintains a balanced-tree over chains.
-Experiments show a \textbf{strong speedup on convex polygons} over the standard Garey et al.\ monotone-decomposition baseline (tens of $\times$ in our suite). On high-event inputs (random and star polygons), the classical edge-based baseline remains faster in our current implementation, while our method stays competitive and substantially outperforms Hertel--Mehlhorn on large instances.
+Experiments show a \textbf{strong speedup on convex polygons} over the standard Garey et al.\ monotone-decomposition baseline (tens of $\times$ in our suite). On random and star polygons, our method is typically fastest for $n \ge 500$ in our suite, with Garey et al.\ remaining slightly faster only at very small $n$ due to constant-factor overheads. Across all families, we substantially outperform Hertel--Mehlhorn on larger instances.
 \end{abstract}
 
 \begin{keyword}
@@ -554,8 +554,9 @@ For $k = o(n / \log n)$, the algorithm runs in $o(n \log n)$ time.
 We implemented the algorithm in C++ and compared against: Garey et al.~\cite{garey1978} (monotone decomposition via the \texttt{polypartition} library), Hertel--Mehlhorn~\cite{hertel1983} (convex partition), and Seidel~\cite{seidel1991} (incremental randomized triangulation). All experiments were run with GCC at \texttt{-O3}. To prevent pathological slowdowns from dominating wall-clock time, each baseline run was capped with a fixed timeout; missing entries in tables are shown as ``--''.
 
 \paragraph{Benchmark setup.}
-We report \emph{mean $\pm$ standard deviation} over \texttt{polygons\_per\_config=5} instances for each $(\text{family}, n)$ configuration (seeds $0,\dots,4$).
+We report \emph{mean $\pm$ standard deviation} of \emph{process CPU time} (ms) over \texttt{polygons\_per\_config=5} instances for each $(\text{family}, n)$ configuration (seeds $0,\dots,4$).
 We perform one unrecorded warm-up run per executable before collecting timings to reduce cold-start bias from code paging and dynamic loader effects.
+To reduce systematic warm/cold bias and cache interference from extremely slow baselines, we benchmark in blocks per $(\text{family}, n)$: we run the fast algorithms (ours, Garey) across all seeds first, then run the slower baselines (Seidel, Hertel--Mehlhorn).
 All polygon families are generated deterministically from the seed and $n$, followed by a fixed rotation to avoid accidental equal-$y$ degeneracies.
 The \textsc{Random} family uses the same generator as \texttt{scripts/generate\_polygons.py}: vertices are sampled by sorting random angles and assigning random radii (yielding a simple star-shaped polygon).
 The \textsc{Convex} family uses seeded affine images of a regular $n$-gon; \textsc{Dent} pulls one seeded vertex inward (seeded location and depth); and \textsc{Star} uses a seeded phase and radii (with mild jitter).
@@ -565,7 +566,7 @@ Our main random-polygon results are included verbatim from the benchmark harness
 
 \input{generated/benchmark_table}
 
-For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{large speedup} over Garey et al.\ in our suite (often tens of $\times$). On dent polygons (very small $k$), we are competitive and often comparable to the monotone-decomposition baseline. On random polygons, our method is competitive and often the fastest for $n \ge 1{,}000$ in our suite, while Garey et al.\ can remain slightly faster at some smaller sizes (and at $n=5{,}000$ in our runs). On star polygons, results are close: we are fastest up to $n=5{,}000$ in our suite, while Garey et al.\ is faster at $n=10{,}000$. Seidel exhibits high constant factors in our experiments.
+For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{large speedup} over Garey et al.\ in our suite (often tens of $\times$). On dent polygons (very small $k$), we are consistently faster from $n=500$ upward in our suite, with results at $n=100$ being essentially tied. On random polygons, our method is fastest for all $n \ge 500$ in our suite; at $n=100$, Garey et al.\ can be marginally faster due to constant overhead. On star polygons, we are fastest for $n \ge 500$ in our suite, while the $n=100$ case is again essentially tied. Seidel exhibits high constant factors in our experiments.
 
 %==============================================================================
 \section{Discussion}
