@@ -46,7 +46,7 @@
 
 \begin{frontmatter}
 
-\title{Practical polygonal triangulation in \texorpdfstring{$O(n + k\log k)$}{O(n + k log k)} Time}
+\title{Practical output-sensitive polygon triangulation in \texorpdfstring{$O(n + k\log k)$}{O(n + k log k)} time}
 
 \author[knu]{Pavel Shpagin\corref{cor1}}
 \ead{pavelandrewshpagin@knu.ua}
@@ -56,8 +56,8 @@
 
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
-The algorithm reformulates monotone decomposition to maintain active monotone chains rather than individual edges. Regular vertices are handled via lazy pointer advancement in $O(n)$ amortized time, while the sweep maintains a balanced-tree over chains.
-Experiments show a \textbf{strong speedup on convex polygons} over the standard Garey et al.\ monotone-decomposition baseline (tens of $\times$ in our suite). Across convex, dent, random, and star families for $n \ge 500$ in our suite, our implementation is the fastest among the tested baselines, while also substantially outperforming Hertel--Mehlhorn on larger instances.
+The key idea is a chain-based reformulation of monotone decomposition: the sweep maintains active monotone chains rather than individual edges, processes only the $2k$ extrema events, and handles regular vertices implicitly via lazy pointer advancement in $O(n)$ amortized time.
+Experiments against Garey et al., Hertel--Mehlhorn, and Seidel show that our implementation dominates the baselines on convex, dent, and random families for all reported sizes, achieving up to $22\times$ speedup over Garey et al.\ on convex polygons and $8\%$--$50\%$ lower running time on random polygons; on star polygons, Garey et al.\ is faster only at $n=500$ and we are fastest for larger sizes.
 \end{abstract}
 
 \begin{keyword}
