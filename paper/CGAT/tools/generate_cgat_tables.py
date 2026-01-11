@@ -116,22 +116,23 @@ def main() -> None:
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     # -------------------------
-    # Main table (Convex + Random)
+    # Main table (Convex + Random) -- formatted like the full table
     # -------------------------
     lines: List[str] = []
-    lines.append("\\begin{table}[t]")
+    lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
     lines.append("\\caption{Running time (ms) on convex and random polygons (mean $\\pm$ stdev over instances).}")
     lines.append("\\label{tab:benchmark}")
-    lines.append("\\begin{tabular}{rrrrrr}")
+    lines.append("\\small")
+    lines.append("\\begin{tabular}{llrrrrr}")
     lines.append("\\toprule")
-    lines.append("$n$ & $k$ & \\textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\\\")
+    lines.append("Type & $n$ & $k$ & \\textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\\\")
     lines.append("\\midrule")
 
     main_families = ["convex", "random"]
     for fi, fam in enumerate(main_families):
         fam_label = FAMILY_LABEL.get(fam, fam.capitalize())
-        lines.append(f"\\multicolumn{{6}}{{l}}{{\\textbf{{{fam_label}}}}} \\\\")
+        first = True
         for n in SIZES:
             kstats = k_by_conf.get((fam, n))
             k_cell = fmt_k(kstats) if kstats else "--"
@@ -151,15 +152,17 @@ def main() -> None:
                 if alg in means:
                     cells[alg] = bold(cells[alg], abs(means[alg] - mn) <= 1e-12)
 
+            type_cell = fam_label if first else ""
             lines.append(
-                f"{n:,} & {k_cell} & {cells['ours']} & {cells['seidel']} & {cells['garey']} & {cells['hertel']} \\\\"
+                f"{type_cell} & {n:,} & {k_cell} & {cells['ours']} & {cells['seidel']} & {cells['garey']} & {cells['hertel']} \\\\"
             )
+            first = False
         if fi + 1 < len(main_families):
             lines.append("\\midrule")
 
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
-    lines.append("\\end{table}")
+    lines.append("\\end{table*}")
     (args.outdir / "benchmark_table.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # -------------------------

@@ -19,6 +19,14 @@
 \usepackage{booktabs}
 \usepackage{url}
 
+% Avoid duplicate hyperlink anchors for algorithmic line numbers when multiple
+% algorithms appear in the paper (hyperref otherwise reuses ALG@line.1, etc.).
+\makeatletter
+\providecommand{\theHalgorithm}{\arabic{algorithm}}
+\providecommand{\theHALG@line}{}
+\renewcommand{\theHALG@line}{ALG@line.\thealgorithm.\arabic{ALG@line}}
+\makeatother
+
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}[theorem]{Lemma}
 \newtheorem{corollary}[theorem]{Corollary}
@@ -37,7 +45,7 @@
 
 \begin{frontmatter}
 
-\title{Practical polygonal triangulation in $O(n + k\log k)$ Time}
+\title{Practical polygonal triangulation in \texorpdfstring{$O(n + k\log k)$}{O(n + k log k)} Time}
 
 \author[knu]{Pavel Shpagin\corref{cor1}}
 \ead{pavelandrewshpagin@knu.ua}
@@ -48,7 +56,7 @@
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
 The algorithm reformulates monotone decomposition to maintain active monotone chains rather than individual edges. Regular vertices are handled via lazy pointer advancement in $O(n)$ amortized time, while the sweep maintains a balanced-tree over chains.
-Experiments show a \textbf{strong speedup on convex polygons} over the standard Garey et al.\ monotone-decomposition baseline (tens of $\times$ in our suite). On random and star polygons, our method is typically fastest for $n \ge 500$ in our suite, with Garey et al.\ remaining slightly faster only at very small $n$ due to constant-factor overheads. Across all families, we substantially outperform Hertel--Mehlhorn on larger instances.
+Experiments show a \textbf{strong speedup on convex polygons} over the standard Garey et al.\ monotone-decomposition baseline (tens of $\times$ in our suite). Across convex, dent, random, and star families for $n \ge 500$ in our suite, our implementation is the fastest among the tested baselines, while also substantially outperforming Hertel--Mehlhorn on larger instances.
 \end{abstract}
 
 \begin{keyword}
@@ -64,7 +72,7 @@ simple polygon \sep triangulation \sep monotone decomposition \sep output-sensit
 
 Triangulating simple polygons is a fundamental problem in computational geometry. Chazelle~\cite{chazelle1991} proved that $O(n)$ time is achievable, but the algorithm's complexity has limited practical adoption. The plane sweep of Garey et al.~\cite{garey1978}, running in $O(n\log n)$ time via monotone decomposition, remains standard; see de Berg et al.~\cite{deberg2008}. Seidel~\cite{seidel1991} gave a randomized $O(n\log^* n)$ expected-time algorithm.
 
-We present an algorithm running in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction. This interpolates between $O(n)$ for convex polygons ($k = 1$) and $O(n\log n)$ for worst-case polygons ($k = \Theta(n)$), improving upon classical methods when $k = o(n/\log n)$.
+We present an algorithm running in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction. This interpolates between $O(n)$ for convex polygons ($k = 1$) and $O(n\log n)$ for worst-case polygons ($k = \Theta(n)$), and can improve upon classical methods when $k$ is substantially smaller than $n$.
 
 The key observation is that the sweep needs to process only local extrema, and regular vertices can be handled implicitly by advancing chain pointers lazily. This yields $O(k)$ sweep events and $O(n)$ total pointer advancement, with balanced-tree operations totaling $O(k\log k)$.
 
@@ -78,7 +86,7 @@ The breakthrough came with Chazelle's~\cite{chazelle1991} deterministic $O(n)$ a
 Our work contributes an $O(n + k \log k)$ algorithm that interpolates between these bounds based on polygon complexity. This output-sensitive approach---where $k$ measures input ``difficulty'' in terms of sweep events---appears not to have been previously explored for triangulation, despite its naturalness.
 
 \paragraph{Organization.}
-\Cref{sec:prelim} defines the event-complexity parameter $k$ and discusses its relationship to reflex vertices. \Cref{sec:algorithm} presents the algorithm. \Cref{sec:correctness} establishes correctness. \Cref{sec:complexity} analyzes complexity. \Cref{sec:experiments} provides experimental evaluation. \Cref{sec:discussion} discusses extensions.
+\Cref{sec:prelim} defines vertex types, monotone chains, and the event-complexity parameter $k$. \Cref{sec:algorithm} presents the algorithm. \Cref{sec:correctness} establishes correctness. \Cref{sec:complexity} analyzes complexity and relates $k$ to the reflex count $r$. \Cref{sec:experiments} provides experimental evaluation. \Cref{sec:discussion} discusses extensions.
 
 %==============================================================================
 \section{Preliminaries}
@@ -112,21 +120,6 @@ The boundary $\partial P$ decomposes uniquely into monotone chains, with consecu
 \label{rem:k-param}
 Our running time and analysis are stated in terms of $k$, the number of local maxima (equivalently, local minima) with respect to the sweep direction. This parameter directly controls the number of sweep events in the chain-based formulation.
 \end{remark}
-
-\begin{lemma}[Counting extrema]
-\label{lem:count-extrema}
-Assume general position (no horizontal edges and no equal $y$-coordinates). Let $s,t,e,m$ denote the numbers of start, split, end, and merge vertices of a simple polygon $P$, respectively. Then
-\[
-s = m + 1
-\qquad\text{and}\qquad
-e = t + 1.
-\]
-Consequently, the number of local maxima is
-\[
-k = s + t = t + m + 1,
-\]
-and hence \(k \le r + 1\), since split and merge vertices are reflex and \(t+m \le r\). Moreover, no two local maxima can be adjacent along \(\partial P\), so \(k \le \lfloor n/2 \rfloor\).
-\end{lemma}
 
 %==============================================================================
 \section{Algorithm}
@@ -502,6 +495,35 @@ Hence the same properties hold for our output.
 \label{sec:complexity}
 %==============================================================================
 
+\begin{lemma}[Counting extrema]
+\label{lem:count-extrema}
+Assume general position (no horizontal edges and no equal $y$-coordinates). Let $s,t,e,m$ denote the numbers of start, split, end, and merge vertices of a simple polygon $P$, respectively. Then
+\[
+s = m + 1
+\qquad\text{and}\qquad
+e = t + 1.
+\]
+Consequently, the number of local maxima is \(k = s + t = t + m + 1\), and hence \(k \le r + 1\) since split and merge vertices are reflex and \(t+m \le r\). Moreover, no two local maxima can be adjacent along \(\partial P\), so \(k \le \lfloor n/2 \rfloor\).
+\end{lemma}
+
+\begin{proof}
+We prove \(s = m + 1\) using superlevel sets. For \(y\in\mathbb{R}\), define
+\[
+P_{\ge y} := P \cap \{(x,y') : y' \ge y\},
+\]
+and let \(c(y)\) be the number of connected components of \(P_{\ge y}\).
+For \(y\) above all vertices, \(P_{\ge y}=\emptyset\) and \(c(y)=0\); for \(y\) below all vertices, \(P_{\ge y}=P\), which is connected, so \(c(y)=1\).
+
+As \(y\) decreases, \(P_{\ge y}\) grows monotonically, so \(c(y)\) can change only when crossing a vertex height, and it can change only by the birth of a new component or by the merge of two components.
+In a sufficiently small neighborhood of a \emph{start} vertex \(v\) (a convex local maximum), the polygon interior lies strictly below \(v\), so for \(y\) just below \(y(v)\) a new connected component of \(P_{\ge y}\) appears near \(v\); thus \(c(y)\) increases by \(1\).
+In a sufficiently small neighborhood of a \emph{merge} vertex \(v\) (a reflex local minimum), two boundary branches approach \(v\) from above and belong to two distinct components of \(P_{\ge y}\) for \(y\) just above \(y(v)\); when \(y\) passes below \(y(v)\), the point \(v\in P_{\ge y}\) connects those components, and \(c(y)\) decreases by \(1\).
+For split, end, and regular vertices, no new component of \(P_{\ge y}\) is born and no two components first become connected at that vertex, so \(c(y)\) does not change there.
+
+Therefore \(c(y)\) increases exactly \(s\) times and decreases exactly \(m\) times as \(y\) sweeps from \(+\infty\) to \(-\infty\), and since the net change is \(1\), we obtain \(s - m = 1\), i.e., \(s = m + 1\).
+
+Finally, reflecting the polygon by mapping \(y \mapsto -y\) swaps local maxima and local minima while preserving convex/reflex status, mapping start to end and merge to split. Applying the already proved identity to the reflected polygon yields \(e = t + 1\).
+\end{proof}
+
 \begin{lemma}[Diagonal bound]
 \label{lem:diag-bound}
 Let $s$ and $m$ be the numbers of split and merge vertices of $P$ (equivalently, the numbers of reflex local maxima and reflex local minima).
@@ -559,10 +581,6 @@ The key comparison between two active chains is where our constant-factor saving
 In a classical edge-based sweep (as in Hertel--Mehlhorn~\cite{hertel1983}), the ordering predicate evaluates the $x$-coordinate of each active edge at the current sweep level \(y\), which involves arithmetic on the two edge endpoints (in particular, at least one division per evaluation).
 In our chain representation, comparisons advance chain pointers \emph{lazily}: when the sweep level descends, a chain pointer moves only forward along the boundary, and each boundary vertex is advanced at most once over the entire run.
 This turns the potentially expensive re-evaluation of edge intersections into an amortized \(O(1)\) pointer update stream, keeping the constant in front of \(k\log k\) dominated by the tree's comparison count rather than repeated geometric recomputation.
-
-\begin{corollary}
-For $k = o(n / \log n)$, the algorithm runs in $o(n \log n)$ time.
-\end{corollary}
 
 %==============================================================================
 \section{Experimental Evaluation}
@@ -627,18 +645,7 @@ Can the $O(k \log k)$ term be reduced to $O(k)$? Do analogous bounds hold for po
 \section*{Acknowledgments}
 %==============================================================================
 The authors thank the computational geometry group at Taras Shevchenko National University of Kyiv for helpful discussions.
-
-\appendix
-
-%==============================================================================
-\section{Extended Benchmark Results}
-\label{sec:appendix}
-%==============================================================================
-
-The full results across all polygon families appear below (generated directly from the benchmark harness):
-
-\input{generated/benchmark_full}
-
+\clearpage
 \begin{thebibliography}{99}
 
 \bibitem{amato2001}
@@ -712,5 +719,15 @@ An $O(n \log \log n)$-time algorithm for triangulating a simple polygon.
 \emph{SIAM Journal on Computing}, 17(1):143--178, 1988.
 
 \end{thebibliography}
+
+\clearpage
+\appendix
+
+%==============================================================================
+\section{Extended Benchmark Results}
+\label{sec:appendix}
+%==============================================================================
+
+\input{generated/benchmark_full}
 
 \end{document}

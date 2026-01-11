@@ -1,24 +1,23 @@
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Running time (ms) on convex and random polygons (mean $\pm$ stdev over instances).}
 \label{tab:benchmark}
-\begin{tabular}{rrrrrr}
+\small
+\begin{tabular}{llrrrrr}
 \toprule
-$n$ & $k$ & \textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\
+Type & $n$ & $k$ & \textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\
 \midrule
-\multicolumn{6}{l}{\textbf{Convex}} \\
-500 & 1 $\pm$ 0 & \textbf{0.00 $\pm$ 0.00} & 5.54 $\pm$ 0.16 & 0.11 $\pm$ 0.01 & 0.01 $\pm$ 0.00 \\
-1,000 & 1 $\pm$ 0 & \textbf{0.01 $\pm$ 0.00} & 5.85 $\pm$ 0.12 & 0.18 $\pm$ 0.01 & 0.02 $\pm$ 0.00 \\
-2,000 & 1 $\pm$ 0 & \textbf{0.03 $\pm$ 0.01} & 6.91 $\pm$ 0.54 & 0.40 $\pm$ 0.02 & 0.05 $\pm$ 0.02 \\
-5,000 & 1 $\pm$ 0 & \textbf{0.06 $\pm$ 0.00} & 8.66 $\pm$ 0.70 & 1.03 $\pm$ 0.03 & 0.13 $\pm$ 0.02 \\
-10,000 & 1 $\pm$ 0 & \textbf{0.13 $\pm$ 0.02} & 12.77 $\pm$ 1.63 & 2.75 $\pm$ 0.24 & 0.29 $\pm$ 0.04 \\
+Convex & 500 & 1 $\pm$ 0 & \textbf{0.00 $\pm$ 0.00} & 5.54 $\pm$ 0.16 & 0.11 $\pm$ 0.01 & 0.01 $\pm$ 0.00 \\
+ & 1,000 & 1 $\pm$ 0 & \textbf{0.01 $\pm$ 0.00} & 5.85 $\pm$ 0.12 & 0.18 $\pm$ 0.01 & 0.02 $\pm$ 0.00 \\
+ & 2,000 & 1 $\pm$ 0 & \textbf{0.03 $\pm$ 0.01} & 6.91 $\pm$ 0.54 & 0.40 $\pm$ 0.02 & 0.05 $\pm$ 0.02 \\
+ & 5,000 & 1 $\pm$ 0 & \textbf{0.06 $\pm$ 0.00} & 8.66 $\pm$ 0.70 & 1.03 $\pm$ 0.03 & 0.13 $\pm$ 0.02 \\
+ & 10,000 & 1 $\pm$ 0 & \textbf{0.13 $\pm$ 0.02} & 12.77 $\pm$ 1.63 & 2.75 $\pm$ 0.24 & 0.29 $\pm$ 0.04 \\
 \midrule
-\multicolumn{6}{l}{\textbf{Random}} \\
-500 & 160 $\pm$ 2 & \textbf{0.23 $\pm$ 0.05} & 7.45 $\pm$ 1.40 & 0.47 $\pm$ 0.54 & 2.54 $\pm$ 0.11 \\
-1,000 & 329 $\pm$ 4 & \textbf{0.39 $\pm$ 0.05} & 7.18 $\pm$ 0.34 & 0.44 $\pm$ 0.02 & 9.74 $\pm$ 0.52 \\
-2,000 & 666 $\pm$ 9 & \textbf{0.73 $\pm$ 0.02} & 8.61 $\pm$ 0.51 & 0.94 $\pm$ 0.11 & 39.37 $\pm$ 3.63 \\
-5,000 & 1661 $\pm$ 17 & \textbf{1.95 $\pm$ 0.13} & 10.98 $\pm$ 1.03 & 2.45 $\pm$ 0.12 & 229.45 $\pm$ 4.65 \\
-10,000 & 3316 $\pm$ 12 & \textbf{4.58 $\pm$ 0.37} & 20.65 $\pm$ 3.70 & 4.98 $\pm$ 0.28 & 1106.70 $\pm$ 60.23 \\
+Random & 500 & 160 $\pm$ 2 & \textbf{0.23 $\pm$ 0.05} & 7.45 $\pm$ 1.40 & 0.47 $\pm$ 0.54 & 2.54 $\pm$ 0.11 \\
+ & 1,000 & 329 $\pm$ 4 & \textbf{0.39 $\pm$ 0.05} & 7.18 $\pm$ 0.34 & 0.44 $\pm$ 0.02 & 9.74 $\pm$ 0.52 \\
+ & 2,000 & 666 $\pm$ 9 & \textbf{0.73 $\pm$ 0.02} & 8.61 $\pm$ 0.51 & 0.94 $\pm$ 0.11 & 39.37 $\pm$ 3.63 \\
+ & 5,000 & 1661 $\pm$ 17 & \textbf{1.95 $\pm$ 0.13} & 10.98 $\pm$ 1.03 & 2.45 $\pm$ 0.12 & 229.45 $\pm$ 4.65 \\
+ & 10,000 & 3316 $\pm$ 12 & \textbf{4.58 $\pm$ 0.37} & 20.65 $\pm$ 3.70 & 4.98 $\pm$ 0.28 & 1106.70 $\pm$ 60.23 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
