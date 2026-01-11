@@ -169,7 +169,9 @@ def main() -> None:
     # Full table (appendix)
     # -------------------------
     full: List[str] = []
-    full.append("\\begin{table*}[t]")
+    # Use a non-floating placement in the appendix to avoid large whitespace
+    # between the appendix heading and the table.
+    full.append("\\begin{table}[H]")
     full.append("\\centering")
     full.append("\\caption{Running time (ms) across polygon families (mean over instances).}")
     full.append("\\label{tab:benchmark-full}")
@@ -210,7 +212,7 @@ def main() -> None:
 
     full.append("\\bottomrule")
     full.append("\\end{tabular}")
-    full.append("\\end{table*}")
+    full.append("\\end{table}")
     (args.outdir / "benchmark_full.tex").write_text("\n".join(full) + "\n", encoding="utf-8")
 
 
