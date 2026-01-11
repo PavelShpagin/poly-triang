@@ -116,41 +116,46 @@ def main() -> None:
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     # -------------------------
-    # Random table (main)
+    # Main table (Convex + Random)
     # -------------------------
     lines: List[str] = []
     lines.append("\\begin{table}[t]")
     lines.append("\\centering")
-    lines.append("\\caption{Running time (ms) on random polygons (mean $\\pm$ stdev over instances).}")
+    lines.append("\\caption{Running time (ms) on convex and random polygons (mean $\\pm$ stdev over instances).}")
     lines.append("\\label{tab:benchmark}")
     lines.append("\\begin{tabular}{rrrrrr}")
     lines.append("\\toprule")
     lines.append("$n$ & $k$ & \\textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\\\")
     lines.append("\\midrule")
 
-    fam = "random"
-    for n in SIZES:
-        kstats = k_by_conf.get((fam, n))
-        k_cell = fmt_k(kstats) if kstats else "--"
+    main_families = ["convex", "random"]
+    for fi, fam in enumerate(main_families):
+        fam_label = FAMILY_LABEL.get(fam, fam.capitalize())
+        lines.append(f"\\multicolumn{{6}}{{l}}{{\\textbf{{{fam_label}}}}} \\\\")
+        for n in SIZES:
+            kstats = k_by_conf.get((fam, n))
+            k_cell = fmt_k(kstats) if kstats else "--"
 
-        means: Dict[str, float] = {}
-        cells: Dict[str, str] = {}
-        for alg in ALGO_ORDER:
-            st = t_by_conf_alg.get((fam, n, alg))
-            if st is None:
-                cells[alg] = "--"
-                continue
-            means[alg] = st.mean
-            cells[alg] = fmt_time(st)
+            means: Dict[str, float] = {}
+            cells: Dict[str, str] = {}
+            for alg in ALGO_ORDER:
+                st = t_by_conf_alg.get((fam, n, alg))
+                if st is None:
+                    cells[alg] = "--"
+                    continue
+                means[alg] = st.mean
+                cells[alg] = fmt_time(st)
 
-        mn = min(means.values()) if means else math.inf
-        for alg in ALGO_ORDER:
-            if alg in means:
-                cells[alg] = bold(cells[alg], abs(means[alg] - mn) <= 1e-12)
+            mn = min(means.values()) if means else math.inf
+            for alg in ALGO_ORDER:
+                if alg in means:
+                    cells[alg] = bold(cells[alg], abs(means[alg] - mn) <= 1e-12)
 
-        lines.append(
-            f"{n:,} & {k_cell} & {cells['ours']} & {cells['seidel']} & {cells['garey']} & {cells['hertel']} \\\\"
-        )
+            lines.append(
+                f"{n:,} & {k_cell} & {cells['ours']} & {cells['seidel']} & {cells['garey']} & {cells['hertel']} \\\\"
+            )
+        if fi + 1 < len(main_families):
+            lines.append("\\midrule")
 
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
