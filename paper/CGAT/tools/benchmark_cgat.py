@@ -221,7 +221,7 @@ def main() -> None:
     exes = {
         "ours": args.bin_dir / "reflex_cli",
         "garey": args.bin_dir / "polypartition_mono_cli",
-        "hertel": args.bin_dir / "polypartition_hm_cli",
+        "hertel": args.bin_dir / "cgal_hm_cli",
         "seidel": args.bin_dir / "seidel_cli",
     }
 

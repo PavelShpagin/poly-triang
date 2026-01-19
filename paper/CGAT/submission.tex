@@ -46,7 +46,7 @@
 
 \begin{frontmatter}
 
-\title{Practical output-sensitive polygon triangulation in \texorpdfstring{$O(n + k\log k)$}{O(n + k log k)} time}
+\title{Practical polygon triangulation in \texorpdfstring{$O(n + k\log k)$}{O(n + k log k)} time}
 
 \author[knu]{Pavel Shpagin\corref{cor1}}
 \ead{pavelandrewshpagin@knu.ua}
@@ -56,12 +56,12 @@
 
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
-The key idea is a chain-based reformulation of monotone decomposition: the sweep maintains active monotone chains rather than individual edges, processes only the $2k$ extrema events, and handles regular vertices implicitly via lazy pointer advancement in $O(n)$ amortized time.
-Experiments against Garey et al., Hertel--Mehlhorn, and Seidel show that our implementation dominates the baselines on convex, dent, and random families for all reported sizes, achieving up to $22\times$ speedup over Garey et al.\ on convex polygons and $8\%$--$50\%$ lower running time on random polygons; on star polygons, Garey et al.\ is faster only at $n=500$ and we are fastest for larger sizes.
+The key idea is a chain-based reformulation of monotone decomposition: the sweep maintains active monotone chains rather than individual edges and advances chain pointers lazily, so the work over all regular vertices is $O(n)$ amortized while the sweep performs $O(k\log k)$ balanced-tree work over the $2k$ extrema.
+Experiments against implementations of Garey et al., Hertel--Mehlhorn, and Seidel show that our method is competitive across polygon families: it is fastest in our convex, dent, and random benchmarks for all reported sizes. We also include the standard linear-time fan triangulation fast path for convex polygons.
 \end{abstract}
 
 \begin{keyword}
-simple polygon \sep triangulation \sep monotone decomposition \sep output-sensitive algorithm \sep plane sweep
+simple polygon \sep triangulation \sep monotone decomposition \sep instance-sensitive algorithm \sep plane sweep
 \end{keyword}
 
 \end{frontmatter}
@@ -71,20 +71,25 @@ simple polygon \sep triangulation \sep monotone decomposition \sep output-sensit
 \label{sec:intro}
 %==============================================================================
 
-Triangulating simple polygons is a fundamental problem in computational geometry. Chazelle~\cite{chazelle1991} proved that $O(n)$ time is achievable, but the algorithm's complexity has limited practical adoption. The plane sweep of Garey et al.~\cite{garey1978}, running in $O(n\log n)$ time via monotone decomposition, remains standard; see de Berg et al.~\cite{deberg2008}. Seidel~\cite{seidel1991} gave a randomized $O(n\log^* n)$ expected-time algorithm.
+Triangulating simple polygons is a fundamental problem in computational geometry. Chazelle~\cite{chazelle1991} proved that $O(n)$ time is achievable, but the algorithm's complexity has limited practical adoption. The plane sweep of Garey et al.~\cite{garey1978}, running in $O(n\log n)$ time via monotone decomposition, remains standard; see de Berg et al.~\cite{deberg2008}. Seidel~\cite{seidel1991} gave a simplified randomized $O(n\log^* n)$ expected-time algorithm.
 
 We present an algorithm running in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction. This interpolates between $O(n)$ for convex polygons ($k = 1$) and $O(n\log n)$ for worst-case polygons ($k = \Theta(n)$), and can improve upon classical methods when $k$ is substantially smaller than $n$.
 
 The key observation is that the sweep needs to process only local extrema, and regular vertices can be handled implicitly by advancing chain pointers lazily. This yields $O(k)$ sweep events and $O(n)$ total pointer advancement, with balanced-tree operations totaling $O(k\log k)$.
 
 \paragraph{Related work.}
-The triangulation problem has a rich history spanning four decades. The earliest approaches include the ear-clipping method of ElGindy et al.~\cite{elgindy1985}, which runs in $O(n^2)$ time. Garey et al.~\cite{garey1978} achieved $O(n \log n)$ time through monotone decomposition, which remains the standard practical approach; see de Berg et al.~\cite{deberg2008} for a textbook treatment. Hertel and Mehlhorn~\cite{hertel1983} provided an alternative $O(n \log n)$ sweep-line algorithm with improved constant factors.
+The triangulation problem has a rich history spanning four decades. The earliest approaches include the ear-clipping method of ElGindy et al.~\cite{elgindy1985}, which runs in $O(n^2)$ time. Garey et al.~\cite{garey1978} achieved $O(n \log n)$ time through monotone decomposition, which remains the standard practical approach; see de Berg et al.~\cite{deberg2008} for a textbook treatment.
 
-Subsequent work focused on reducing the $O(n \log n)$ bound. Tarjan and Van Wyk~\cite{tarjan1988} achieved $O(n \log \log n)$ using sophisticated data structures, later simplified by Kirkpatrick et al.~\cite{kirkpatrick1992}. Randomized approaches proved fruitful: Clarkson et al.~\cite{clarkson1989} gave an $O(n \log^* n)$ expected-time Las Vegas algorithm, which Seidel~\cite{seidel1991} simplified significantly using trapezoidal decomposition. Amato et al.~\cite{amato2001} provided further simplifications of randomized linear-time triangulation.
+Hertel and Mehlhorn~\cite{hertel1983} described an $O(n \log n)$ algorithm that first triangulates, then merges triangles into a convex partition with at most $4$ times the minimum number of convex pieces; this convex-partition step is sometimes used as a triangulation subroutine. Subsequent work focused on reducing the $O(n \log n)$ bound. Tarjan and Van Wyk~\cite{tarjan1988} achieved $O(n \log \log n)$ using sophisticated data structures, later simplified by Kirkpatrick et al.~\cite{kirkpatrick1992}. Randomized approaches proved fruitful: Clarkson et al.~\cite{clarkson1989} gave an $O(n \log^* n)$ expected-time Las Vegas algorithm, which Seidel~\cite{seidel1991} simplified significantly using trapezoidal decomposition. Amato et al.~\cite{amato2001} provided further simplifications of randomized linear-time triangulation.
 
-The breakthrough came with Chazelle's~\cite{chazelle1991} deterministic $O(n)$ algorithm, resolving a long-standing open problem. However, the algorithm's complexity---involving hierarchical polygon decomposition and intricate merge operations---has limited practical adoption. Fournier and Montuno~\cite{fournier1984} studied triangulation of monotone polygons. Keil~\cite{keil2000} surveys polygon decomposition more broadly. Output-sensitive algorithms exist for related problems: Kirkpatrick and Seidel~\cite{kirkpatrick1986} gave an $O(n \log h)$ convex hull algorithm where $h$ is the output size. Chazelle and Incerpi~\cite{chazelle1984} studied shape complexity and triangulation.
+The breakthrough came with Chazelle's~\cite{chazelle1991} deterministic $O(n)$ algorithm, resolving a long-standing open problem. However, the algorithm's complexity---involving hierarchical polygon decomposition and intricate merge operations---has limited practical adoption. Fournier and Montuno~\cite{fournier1984} studied triangulation of monotone polygons. Keil~\cite{keil2000} surveys polygon decomposition more broadly.
 
-Our work contributes an $O(n + k \log k)$ algorithm that interpolates between these bounds based on polygon complexity. This output-sensitive approach---where $k$ measures input ``difficulty'' in terms of sweep events---appears not to have been previously explored for triangulation, despite its naturalness.
+Beyond $n$-based worst-case analysis, instance/output complexity measures have also been considered in triangulation.
+Chazelle and Incerpi~\cite{chazelle1984} study triangulation and shape complexity, and Toussaint~\cite{toussaint1990,toussaint1991} gives triangulation algorithms whose running time depends on an \emph{output} measure of the produced triangulation.
+Separately, the number of monotone chains/extrema depends on the sweep direction; Shin and Kim~\cite{shin2004} study choosing a direction that optimizes a monotone-chain decomposition.
+
+Our contribution is a deterministic sweep-based algorithm with running time $O(n + k \log k)$ parameterized by the number of local extrema $k$, achieved by maintaining chains in the sweep status structure and handling regular vertices lazily.
+To the best of our knowledge, this explicit extrema-parameterization of monotone decomposition (together with an implementation-oriented equivalence proof to the textbook sweep) has not been previously stated for polygon triangulation.
 
 \paragraph{Organization.}
 \Cref{sec:prelim} defines vertex types, monotone chains, and the event-complexity parameter $k$. \Cref{sec:algorithm} presents the algorithm. \Cref{sec:correctness} establishes correctness. \Cref{sec:complexity} analyzes complexity and relates $k$ to the reflex count $r$. \Cref{sec:experiments} provides experimental evaluation. \Cref{sec:discussion} discusses extensions.
@@ -108,7 +113,7 @@ Assuming general position (no two vertices share the same $y$-coordinate), each 
 \end{itemize}
 \end{definition}
 
-Start and split vertices are \emph{local maxima}; end and merge vertices are \emph{local minima}. Split and merge vertices are precisely the reflex vertices among local extrema. Regular vertices partition into two subtypes based on whether the polygon interior lies to their left or right as one traverses the boundary; this distinction, while important for implementation, does not affect our analysis.
+Start and split vertices are \emph{local maxima}; end and merge vertices are \emph{local minima}. Split and merge vertices are precisely the reflex vertices among local extrema. Regular vertices partition into two subtypes based on whether the polygon interior lies to their left or right as one traverses the boundary; this distinction is needed in \textsc{Advance} to mirror the textbook sweep's regular-vertex behavior, but it does not affect the asymptotic bounds.
 
 \begin{definition}[Monotone chain]
 \label{def:chain}
@@ -165,10 +170,15 @@ The comparison function for $T$, when comparing chains at sweep height $y$, firs
 \Procedure{Advance}{$C, y$}
     \While{$C.\mathit{curr}.\mathit{lower}.y > y$}
         \State $C.\mathit{curr} \gets$ next edge down $C$
+        \State $u \gets C.\mathit{curr}.\mathit{upper}$ \Comment{vertex just passed}
+        \If{$u$ is regular and $C.\mathit{pending} \neq \textsc{null}$ and $\mathsf{InteriorRight}(u)$}
+            \State $D \gets D \cup \{(u, C.\mathit{pending})\}$; $C.\mathit{pending} \gets \textsc{null}$
+        \EndIf
     \EndWhile
 \EndProcedure
 \end{algorithmic}
-After advancement, the $x$-coordinate of $C$ at height $y$ is computed by linear interpolation along $C.\mathit{curr}$. Since each vertex is visited by at most one chain's pointer exactly once, the total cost of all pointer advancements is $O(n)$, amortized over all tree operations.
+Here $\mathsf{InteriorRight}(u)$ is the standard regular-vertex side test from the textbook sweep (i.e., the subtype of regular vertices handled like an end vertex); it can be decided from the local boundary configuration at $u$.
+After advancement, the $x$-coordinate of $C$ at height $y$ is computed by linear interpolation along $C.\mathit{curr}$. Since each vertex is visited by at most one chain's pointer exactly once, the total cost of all pointer advancements (and any diagonals emitted inside \textsc{Advance}) is $O(n)$, amortized over all tree operations.
 
 \paragraph{Event processing.}
 The sweep processes local extrema in decreasing $y$-order. Let $E$ denote the sorted list of extrema; $|E| = 2k$, where $k$ is the number of local maxima (equivalently local minima).
@@ -380,7 +390,7 @@ Each $y$-monotone polygon with $m$ vertices is triangulated in $O(m)$ time using
 \label{fig:example}
 \end{figure*}
 
-\Cref{fig:example} illustrates the algorithm on a polygon with $n = 12$ vertices and $r = 3$ reflex vertices ($v_2$, $v_4$ are merges; $v_9$ is a split). The sweep processes 9 local extrema. At merge $v_4$, the pending mechanism registers $v_4$ on the left chain. At merge $v_2$, the pending $v_4$ triggers diagonal $(v_2, v_4)$, then $v_2$ becomes pending. At split $v_9$, the pending $v_2$ triggers diagonal $(v_9, v_2)$. The two diagonals partition $P$ into three $y$-monotone faces, yielding 10 triangles.
+\Cref{fig:example} illustrates the algorithm on a polygon with $n = 12$ vertices and $r = 3$ reflex vertices ($v_2$, $v_4$ are merges; $v_9$ is a split). The sweep processes 8 local extrema. At merge $v_4$, the pending mechanism registers $v_4$ on the left chain. At merge $v_2$, the pending $v_4$ triggers diagonal $(v_2, v_4)$, then $v_2$ becomes pending. At split $v_9$, the pending $v_2$ triggers diagonal $(v_9, v_2)$. The two diagonals partition $P$ into three $y$-monotone faces, yielding 10 triangles.
 
 %==============================================================================
 \section{Correctness}
@@ -393,7 +403,8 @@ Correctness is therefore best stated as an equivalence to the textbook sweep, ra
 
 \paragraph{Textbook baseline (edge-based sweep).}
 The classical algorithm maintains a balanced BST of active edges intersecting the sweep line, ordered by their intersection $x$-coordinate.
-Each active edge $e$ stores a vertex $\mathit{helper}(e)$, defined as the most recently processed vertex above the sweep line that can ``see'' $e$ from the interior; diagonals are inserted from split/merge vertices to the helper of the edge immediately to their left.
+Each active edge $e$ stores a vertex $\mathit{helper}(e)$, defined as the most recently processed vertex above the sweep line that can ``see'' $e$ from the interior.
+As in the textbook algorithm~\cite{deberg2008}, diagonals are inserted whenever the relevant helper is a \emph{merge} vertex (this can occur at split, merge, end, and certain regular vertices).
 The resulting diagonal set is known to be valid and to yield a $y$-monotone decomposition; see~\cite{deberg2008}.
 
 \paragraph{Chain-based representation.}
@@ -415,17 +426,22 @@ For an active chain $C$ at sweep height $y$, define its \emph{implicit helper} v
 Intuitively, $\mathit{ih}(C,y)$ is the last vertex of $C$ that the sweep has passed strictly above height $y$.
 \end{definition}
 
-\begin{lemma}[Advance simulates regular-vertex helper updates]
+\begin{lemma}[Advance simulates regular-vertex processing]
 \label{lem:advance-sim}
 Fix any chain $C$ and consider two sweep heights $y_1 > y_2$ with no extrema between them.
 Let $e_1 = e(C,y_1)$ and $e_2 = e(C,y_2)$ after performing \textsc{Advance} as needed.
 Then $\mathit{ih}(C,y_2)$ equals the last vertex of $C$ encountered when walking down $C$ from its top endpoint until reaching height $y_2$; moreover, along this descent, every regular vertex of $C$ is encountered exactly once over the entire sweep.
+If \textsc{Advance} emits a diagonal at a regular vertex (as in \Cref{sec:decomposition}), that diagonal coincides with the diagonal inserted by the textbook sweep at that regular vertex (to a pending merge helper).
 \end{lemma}
 
 \begin{proof}
 By definition, \textsc{Advance} walks the chain pointer $C.\mathit{curr}$ monotonically downward along $C$, stopping once the current edge spans the query height.
 Therefore the upper endpoint of the resulting current edge is exactly the last chain vertex above the height, i.e., $\mathit{ih}(C,y_2)$.
 Since $C.\mathit{curr}$ only moves forward (down the chain), each vertex of $C$ can become an upper endpoint of $C.\mathit{curr}$ at most once, implying the claimed ``encountered once'' property.
+
+The only diagonals emitted inside \textsc{Advance} are of the form $(u, C.\mathit{pending})$ at a regular vertex $u$ with $\mathsf{InteriorRight}(u)$.
+By \Cref{def:pending-helper}, $C.\mathit{pending}$ represents the textbook merge-helper state of the corresponding active edge on this chain.
+The textbook sweep inserts exactly this diagonal at $u$ in the regular-vertex case when that helper is a merge vertex~\cite{deberg2008}.
 \end{proof}
 
 \begin{definition}[Pending as ``merge-helper'']
@@ -441,9 +457,11 @@ C.\mathit{pending} \neq \textsc{null}
 If $C.\mathit{pending} = \textsc{null}$, the role of $\mathit{helper}\bigl(e(C,y)\bigr)$ is played by the implicit helper $\mathit{ih}(C,y)$ from \Cref{def:implicit-helper}.
 \end{definition}
 
-\begin{lemma}[Equivalence of diagonal targets]
+\begin{lemma}[Equivalence of diagonals]
 \label{lem:equiv-target}
-At every event vertex $v$ (start/end/split/merge), the diagonal(s) added by \Cref{alg:decompose} coincide with those added by the textbook edge-based sweep when run on the same polygon and event order.
+Let $D_{\mathrm{chain}}$ be the set of diagonals produced by \Cref{alg:decompose} together with any diagonals emitted inside \textsc{Advance}.
+Let $D_{\mathrm{text}}$ be the set of diagonals produced by the textbook edge-based sweep on the same polygon and event order.
+Then $D_{\mathrm{chain}} = D_{\mathrm{text}}$.
 \end{lemma}
 
 \begin{proof}
@@ -458,13 +476,14 @@ Therefore, when \Cref{alg:decompose} takes ``the predecessor of $v$ in $T$'', it
 
 \medskip
 \noindent\textbf{Step 2: Helper agreement on regular vertices via \textsc{Advance}.}
-The textbook sweep updates $\mathit{helper}(e)$ at regular vertices when the current active edge on a chain changes to the next edge below.
+The textbook sweep updates $\mathit{helper}(e)$ at regular vertices when the current active edge on a chain changes to the next edge below, and it may also add a diagonal at a regular vertex when the relevant helper is a merge vertex.
 Our algorithm does not process those regular vertices as events, but it does update the current edge implicitly: whenever $T$ needs the key of a chain at some height $y$, it calls \textsc{Advance} so that the stored edge equals $e(C,y)$.
 By \Cref{lem:advance-sim}, the vertex $\mathit{ih}(C,y)$ equals the last vertex encountered when walking down the chain to height $y$, which is exactly the vertex that the textbook sweep would have last assigned as helper on the current edge of that chain unless that helper is a merge vertex awaiting a future diagonal.
 We encode precisely this exception via \Cref{def:pending-helper}.
+When $\mathit{helper}(e)$ is a merge vertex and the textbook sweep would add a diagonal at a regular vertex, our \textsc{Advance} emits the same diagonal using $C.\mathit{pending}$ and clears it (see \Cref{sec:decomposition}).
 
 \medskip
-\noindent\textbf{Step 3: Case analysis at event vertices.}
+\noindent\textbf{Step 3: Case analysis at extrema events.}
 Let $v$ be the next event vertex processed.
 \begin{itemize}
     \item \textbf{Start.} In the textbook sweep, a start vertex inserts its outgoing edge(s) into the status structure and sets their helpers to $v$. In our representation, the unique left-boundary chain originating at $v$ is inserted into $T$ and its pointer is initialized so that $\mathit{ih}(C,y)=v$ for heights just below $v$; also $C.\mathit{pending}$ is null. Thus the (merge-)helper information agrees.
@@ -504,7 +523,7 @@ Under the general position assumptions, no two local maxima can be adjacent alon
 \begin{lemma}[Diagonal bound]
 \label{lem:diag-bound}
 Let $s$ and $m$ be the numbers of split and merge vertices of $P$ (equivalently, the numbers of reflex local maxima and reflex local minima).
-Then \Cref{alg:decompose} inserts at most $s+m$ diagonals.
+Then the monotone-decomposition phase (\Cref{alg:decompose} together with any diagonals emitted inside \textsc{Advance}) inserts at most $s+m$ diagonals.
 In particular, $|D| \leq s+m \leq r$.
 \end{lemma}
 
@@ -514,7 +533,7 @@ Each split vertex triggers exactly one diagonal insertion in \Cref{alg:decompose
 It remains to bound diagonals created due to the \texttt{pending} mechanism.
 Only merge vertices are ever assigned to a field $C.\mathit{pending}$.
 Each such assignment $C.\mathit{pending}\gets v$ occurs at the unique processing step of merge vertex $v$ and can happen only once for that vertex.
-Afterwards, that stored value is consumed exactly once: either it is used to form a diagonal at a later split/merge event when the chain is immediately left of the current vertex, or it is used at the end vertex where the chain terminates; in all cases the stored value is overwritten (or the chain is removed), so it cannot generate a second diagonal.
+Afterwards, that stored value is consumed exactly once: it is used to form a diagonal either at a later split/merge event when the chain is immediately left of the current vertex, or at a regular vertex encountered during \textsc{Advance}, or at the end vertex where the chain terminates; in all cases the stored value is overwritten (or the chain is removed), so it cannot generate a second diagonal.
 Therefore at most one diagonal is generated per merge vertex via \texttt{pending}, contributing at most $m$ diagonals.
 
 Hence $|D| \leq s + m \leq r$ since every split and merge vertex is reflex.
@@ -576,7 +595,7 @@ Finally, reflecting the polygon by mapping \(y \mapsto -y\) swaps local maxima a
 By \Cref{lem:count-extrema}, \(k \le r + 1\), and therefore our bound also implies \(O(n + r\log r)\). The advantage of phrasing the running time in terms of \(k\) is that \(k\) can be asymptotically smaller than \(r\) (e.g., when many reflex vertices are regular rather than extrema), yielding a strictly smaller \(k\log k\) term.
 
 \paragraph{Constant factors in the $k\log k$ term.}
-To compare practical performance between output-sensitive sweeps, it is useful to separate \emph{(i)} the number of balanced-tree operations from \emph{(ii)} the cost of an order comparison in the tree.
+To compare practical performance between instance-sensitive sweeps, it is useful to separate \emph{(i)} the number of balanced-tree operations from \emph{(ii)} the cost of an order comparison in the tree.
 In our method, the balanced structure $T$ stores only \emph{active chains} and is queried only at local extrema and split/merge vertices.
 Consequently, the number of tree operations is \emph{linear in $k$}:
 each event performs one predecessor query in $T$ and $O(1)$ updates (insert/delete of at most a constant number of chains), and there are exactly $2k$ events.
@@ -593,22 +612,28 @@ This turns the potentially expensive re-evaluation of edge intersections into an
 \label{sec:experiments}
 %==============================================================================
 
-We implemented the algorithm in C++ and compared against: Garey et al.~\cite{garey1978} (monotone decomposition via the \texttt{polypartition} library), Hertel--Mehlhorn~\cite{hertel1983} (convex partition), and Seidel~\cite{seidel1991} (incremental randomized triangulation). All experiments were run with GCC at \texttt{-O3}. To prevent pathological slowdowns from dominating wall-clock time, each baseline run was capped with a fixed timeout; missing entries in tables are shown as ``--''.
+We implemented the algorithm in C++ and compared against: Garey et al.~\cite{garey1978} (monotone decomposition via the \texttt{polypartition} library), Hertel--Mehlhorn~\cite{hertel1983} (approximate convex partition via \texttt{CGAL} \texttt{approx\_convex\_partition\_2}, then fan triangulation of each convex piece), and Seidel~\cite{seidel1991} (incremental randomized triangulation). All experiments were run with GCC at \texttt{-O3}. To prevent pathological slowdowns from dominating wall-clock time, each run was capped with a \textbf{10\,s timeout} (missing entries are shown as ``--'').
+
+\paragraph{Environment.}
+Benchmarks were run under WSL2 (Linux kernel 6.6.87.2) on a 13th Gen Intel(R) Core(TM) i5-1345U (6 cores / 12 threads) with 16\,GiB RAM, using g++ 13.3.0 and Python 3.12.3.
 
 \paragraph{Benchmark setup.}
-We report \emph{mean $\pm$ standard deviation} of \emph{process CPU time} (ms) over \texttt{polygons\_per\_config=5} instances for each $(\text{family}, n)$ configuration (seeds $0,\dots,4$).
+We report \emph{mean $\pm$ standard deviation} of the \emph{elapsed time} (ms) printed by each executable for each $(\text{family}, n)$ configuration (seeds $0,\dots,4$), with \texttt{polygons\_per\_config=5}.
 We perform one unrecorded warm-up run per executable before collecting timings to reduce cold-start bias from code paging and dynamic loader effects.
 To reduce systematic warm/cold bias and cache interference from extremely slow baselines, we benchmark in blocks per $(\text{family}, n)$: we run the fast algorithms (ours, Garey) across all seeds first, then run the slower baselines (Seidel, Hertel--Mehlhorn).
 All polygon families are generated deterministically from the seed and $n$, followed by a fixed rotation to avoid accidental equal-$y$ degeneracies.
 The \textsc{Random} family uses the same generator as \texttt{scripts/generate\_polygons.py}: vertices are sampled by sorting random angles and assigning random radii (yielding a simple star-shaped polygon).
-The \textsc{Convex} family uses seeded affine images of a regular $n$-gon; \textsc{Dent} pulls one seeded vertex inward (seeded location and depth); and \textsc{Star} uses a seeded phase and radii (with mild jitter).
+The \textsc{Convex} family uses seeded affine images of a regular $n$-gon, and \textsc{Dent} pulls one seeded vertex inward (seeded location and depth).
 The event parameter $k$ shown in the tables is computed directly from each polygon as the number of local maxima, and is reported as mean $\pm$ stdev across instances.
 
-Our main convex and random results are included verbatim from the benchmark harness:
+Our main convex, dent, and random results are included verbatim from the benchmark harness:
 
 \input{generated/benchmark_table}
 
-For convex inputs, our implementation benefits from the linear-time fan fast path and achieves a \textbf{large speedup} over Garey et al.\ in our suite (often tens of $\times$). On dent polygons (very small $k$), we are consistently faster from $n=500$ upward in our suite. On random polygons, our method is fastest for all reported sizes. On star polygons, results are close but we are fastest for all reported sizes. Seidel exhibits high constant factors in our experiments.
+For convex inputs, our implementation includes the standard linear-time fan triangulation fast path, achieving roughly $20\times$ speedup over Garey et al.\ for $n=10{,}000$.
+On dent polygons (very small $k=2$), the chain-based sweep is consistently fastest, roughly $2\times$ faster than Garey et al.
+On random polygons, our method is fastest for all reported sizes in \Cref{tab:benchmark}.
+Seidel exhibits high constant factors in our experiments; CGAL's Hertel--Mehlhorn convex partition baseline is substantially slower than the monotone-decomposition baselines in our setup.
 
 %==============================================================================
 \section{Discussion}
@@ -627,22 +652,22 @@ For convex inputs, our implementation benefits from the linear-time fan fast pat
 \toprule
 \textbf{Algorithm} & \textbf{Complexity} & \textbf{Notes} \\
 \midrule
-Garey et al.~\cite{garey1978} & $O(n \log n)$ & standard practical \\
-Hertel--Mehlhorn~\cite{hertel1983} & $O(n \log n)$ & convex partition \\
+Garey et al.~\cite{garey1978} & $O(n \log n)$ & monotone decomposition \\
+Hertel--Mehlhorn~\cite{hertel1983} & $O(n \log n)$ & via convex partition \\
 Seidel~\cite{seidel1991} & $O(n \log^* n)$ exp. & randomized \\
 Chazelle~\cite{chazelle1991} & $O(n)$ & impractical \\
-\textbf{This paper} & $O(n + k \log k)$ & output-sensitive (in \#extrema $k$) \\
+\textbf{This paper} & $O(n + k \log k)$ & instance-sensitive (in \#extrema $k$) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Our algorithm achieves the output-sensitive bound $O(n + k \log k)$, where $k$ is the number of local extrema with respect to the sweep direction. The sweep processes $O(k)$ events with $O(\log k)$ balanced-tree operations each, while lazy pointer advancement handles all $n$ vertices in $O(n)$ amortized time. This interpolates between $O(n)$ on nearly monotone inputs and $O(n \log n)$ in the worst case. The implementation uses cache-friendly monotone chain representation for efficient constant factors.
+Our algorithm achieves the instance-sensitive bound $O(n + k \log k)$, where $k$ is the number of local extrema with respect to the sweep direction. The sweep processes $O(k)$ events with $O(\log k)$ balanced-tree operations each, while lazy pointer advancement handles all $n$ vertices in $O(n)$ amortized time. This interpolates between $O(n)$ on nearly monotone inputs and $O(n \log n)$ in the worst case. The implementation uses cache-friendly monotone chain representation for efficient constant factors.
 
 \paragraph{Extensions.}
 The algorithm extends naturally to polygons with holes: each hole boundary contributes its own set of chains and extrema, and the sorted extrema lists are merged. The analysis carries through with $k$ now denoting the total number of local maxima across all boundaries (equivalently, local minima).
 
 \paragraph{Implementation.}
-For $k$ close to $n$, a simpler edge-based sweep may have better constants. Improving constants in the high-event regime without sacrificing the output-sensitive structure is a key practical direction.
+For $k$ close to $n$, a simpler edge-based sweep may have better constants. Improving constants in the high-event regime without sacrificing the $k$-sensitive structure is a key practical direction.
 
 \paragraph{Open problems.}
 Can the $O(k \log k)$ term be reduced to $O(k)$? Do analogous bounds hold for polygons with holes or higher-dimensional tetrahedralization?
@@ -715,6 +740,11 @@ D.~G.~Kirkpatrick, M.~M.~Klawe, and R.~E.~Tarjan.
 Polygon triangulation in $O(n \log \log n)$ time with simple data structures.
 \emph{Discrete \& Computational Geometry}, 7(4):329--346, 1992.
 
+\bibitem{shin2004}
+H.~Shin and D.-S.~Kim.
+Optimal direction for monotone chain decomposition.
+In \emph{Computational Science and Its Applications -- ICCSA 2004}, pages 583--591. Springer, 2004.
+
 \bibitem{seidel1991}
 R.~Seidel.
 A simple and fast incremental randomized algorithm for computing trapezoidal decompositions and for triangulating polygons.
@@ -725,15 +755,16 @@ R.~E.~Tarjan and C.~J.~Van~Wyk.
 An $O(n \log \log n)$-time algorithm for triangulating a simple polygon.
 \emph{SIAM Journal on Computing}, 17(1):143--178, 1988.
 
+\bibitem{toussaint1990}
+G.~T.~Toussaint.
+An output-complexity-sensitive polygon triangulation algorithm.
+In \emph{CG International '90}, pages 443--466. Springer, 1990.
+
+\bibitem{toussaint1991}
+G.~T.~Toussaint.
+Efficient triangulation of simple polygons.
+\emph{The Visual Computer}, 7(5--6):280--295, 1991.
+
 \end{thebibliography}
-
-\appendix
-
-%==============================================================================
-\section{Extended Benchmark Results}
-\label{sec:appendix}
-%==============================================================================
-
-\input{generated/benchmark_full}
 
 \end{document}

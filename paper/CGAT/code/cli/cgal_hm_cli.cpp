@@ -1,22 +1,27 @@
-// PolyPartition Hertel-Mehlhorn convex partition baseline CLI.
+// CGAL Hertel--Mehlhorn (approximate convex partition) baseline CLI.
 //
-// Uses:
-//   TPPLPartition::ConvexPartition_HM_Fast (O(n log n) monotone triangulation)
-// then triangulates each convex piece with a fan (O(total vertices)).
+// Uses CGAL::approx_convex_partition_2 (Partition_2 package), then triangulates
+// each convex piece with a fan (O(total vertices)).
 //
 // Input:  .poly (n then n lines x y), simple polygon without holes.
 // Output: .tri and one stdout line:
 //   hertel,vertices=n,triangles=t,time_ms=...
+//
+// NOTE: CGAL's Partition_2 package is GPL-3.0-or-later OR commercial licensed.
+// Ensure this baseline is acceptable for your distribution / artifact policy.
 
 #include <array>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include <time.h>
 
-#include "polypartition.h"
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Polygon_2.h>
+#include <CGAL/partition_2.h>
 
 static double cpu_now_ms() {
   struct timespec ts;
@@ -92,44 +97,70 @@ void write_tri(const std::string& path,
 
 int main(int argc, char** argv) {
   try {
+    using K = CGAL::Exact_predicates_inexact_constructions_kernel;
+    using Point_2 = K::Point_2;
+    // CGAL's approx_convex_partition_2 returns sub-polygons stored in a
+    // list-based Polygon_2 type (see Partition_2 internals). Using std::list as
+    // the polygon container here avoids type-mismatch issues on output.
+    using Polygon_2 = CGAL::Polygon_2<K, std::list<Point_2>>;
+
     const auto args = parse_args(argc, argv);
     const auto pts = read_poly(args.input);
+    const int n = static_cast<int>(pts.size());
 
-    TPPLPoly poly;
-    poly.Init(static_cast<long>(pts.size()));
-    for (long i = 0; i < poly.GetNumPoints(); ++i) {
-      poly[i].x = pts[static_cast<std::size_t>(i)].x;
-      poly[i].y = pts[static_cast<std::size_t>(i)].y;
-      poly[i].id = static_cast<int>(i);
+    // Coordinate -> original vertex index mapping.
+    // We rely on CGAL returning only original vertices in partition polygons.
+    std::map<std::pair<double, double>, int> idx_by_xy;
+    idx_by_xy.clear();
+    for (int i = 0; i < n; ++i) {
+      idx_by_xy[{pts[static_cast<std::size_t>(i)].x, pts[static_cast<std::size_t>(i)].y}] = i;
     }
-    poly.SetHole(false);
-    poly.SetOrientation(TPPL_ORIENTATION_CCW);
 
-    TPPLPartition partition;
-    TPPLPolyList convex_parts;
+    Polygon_2 poly;
+    for (const auto& p : pts) {
+      poly.push_back(Point_2(p.x, p.y));
+    }
+    if (poly.orientation() == CGAL::CLOCKWISE) {
+      poly.reverse_orientation();
+    }
+
+    std::vector<std::array<int, 3>> out_tris;
+    out_tris.reserve(static_cast<std::size_t>(n > 2 ? (n - 2) : 0));
 
     const double t0 = cpu_now_ms();
-    const int ok = partition.ConvexPartition_HM_Fast(&poly, &convex_parts);
-    if (ok == 0) {
-      throw std::runtime_error("ConvexPartition_HM_Fast failed");
-    }
 
-    // Triangulate each convex part by fan triangulation around vertex 0.
-    std::vector<std::array<int, 3>> out_tris;
-    for (const auto& part : convex_parts) {
-      const long m = part.GetNumPoints();
+    std::list<Polygon_2> parts;
+    CGAL::approx_convex_partition_2(poly.vertices_begin(), poly.vertices_end(),
+                                   std::back_inserter(parts));
+
+    // Triangulate each convex part by a fan around vertex 0.
+    for (const auto& part : parts) {
+      const int m = static_cast<int>(part.size());
       if (m < 3) continue;
-      if (m == 3) {
-        out_tris.push_back({part[0].id, part[1].id, part[2].id});
-        continue;
+
+      std::vector<int> vids;
+      vids.reserve(static_cast<std::size_t>(m));
+      for (auto vit = part.vertices_begin(); vit != part.vertices_end(); ++vit) {
+        const double x = CGAL::to_double(vit->x());
+        const double y = CGAL::to_double(vit->y());
+        const auto it = idx_by_xy.find({x, y});
+        if (it == idx_by_xy.end()) {
+          throw std::runtime_error("CGAL partition produced a vertex not in input polygon");
+        }
+        vids.push_back(it->second);
       }
-      for (long i = 1; i + 1 < m; ++i) {
-        out_tris.push_back({part[0].id, part[i].id, part[i + 1].id});
+
+      for (int i = 1; i + 1 < m; ++i) {
+        out_tris.push_back({vids[0], vids[i], vids[i + 1]});
       }
     }
 
     const double t1 = cpu_now_ms();
     const double elapsed_ms = (t1 - t0);
+
+    if (static_cast<int>(out_tris.size()) != n - 2) {
+      throw std::runtime_error("Unexpected triangle count (expected n-2)");
+    }
 
     write_tri(args.output, pts, out_tris);
     std::cout << "hertel,vertices=" << pts.size()

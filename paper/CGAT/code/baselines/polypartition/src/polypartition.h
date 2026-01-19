@@ -405,6 +405,13 @@ public:
   // Returns 1 on success, 0 on failure.
   int ConvexPartition_HM(TPPLPolyList *inpolys, TPPLPolyList *parts);
 
+  // Same as ConvexPartition_HM but uses O(n log n) monotone triangulation
+  // instead of O(n^2) ear clipping for the intermediate triangulation step.
+  // Time complexity O(n log n), n is the number of vertices.
+  // Space complexity: O(n)
+  int ConvexPartition_HM_Fast(TPPLPoly *poly, TPPLPolyList *parts);
+  int ConvexPartition_HM_Fast(TPPLPolyList *inpolys, TPPLPolyList *parts);
+
   // Optimal convex partitioning (in terms of number of resulting
   // convex polygons) using the Keil-Snoeyink algorithm.
   // For reference, see M. Keil, J. Snoeyink, "On the time bound for

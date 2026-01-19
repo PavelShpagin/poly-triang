@@ -686,6 +686,161 @@ int TPPLPartition::ConvexPartition_HM(TPPLPolyList *inpolys, TPPLPolyList *parts
   return 1;
 }
 
+// Fast version using O(n log n) monotone triangulation instead of O(n^2) ear clipping
+int TPPLPartition::ConvexPartition_HM_Fast(TPPLPoly *poly, TPPLPolyList *parts) {
+  if (!poly->Valid()) {
+    return 0;
+  }
+
+  TPPLPolyList triangles;
+  TPPLPolyList::iterator iter1, iter2;
+  TPPLPoly *poly1 = NULL, *poly2 = NULL;
+  TPPLPoly newpoly;
+  TPPLPoint d1, d2, p1, p2, p3;
+  long i11, i12, i21, i22, i13, i23, j, k;
+  bool isdiagonal;
+  long numreflex;
+
+  // Check if the poly is already convex.
+  numreflex = 0;
+  for (i11 = 0; i11 < poly->GetNumPoints(); i11++) {
+    if (i11 == 0) {
+      i12 = poly->GetNumPoints() - 1;
+    } else {
+      i12 = i11 - 1;
+    }
+    if (i11 == (poly->GetNumPoints() - 1)) {
+      i13 = 0;
+    } else {
+      i13 = i11 + 1;
+    }
+    if (IsReflex(poly->GetPoint(i12), poly->GetPoint(i11), poly->GetPoint(i13))) {
+      numreflex = 1;
+      break;
+    }
+  }
+  if (numreflex == 0) {
+    parts->push_back(*poly);
+    return 1;
+  }
+
+  // Use O(n log n) monotone triangulation instead of O(n^2) ear clipping
+  if (!Triangulate_MONO(poly, &triangles)) {
+    return 0;
+  }
+
+  for (iter1 = triangles.begin(); iter1 != triangles.end(); iter1++) {
+    poly1 = &(*iter1);
+    for (i11 = 0; i11 < poly1->GetNumPoints(); i11++) {
+      d1 = poly1->GetPoint(i11);
+      i12 = (i11 + 1) % (poly1->GetNumPoints());
+      d2 = poly1->GetPoint(i12);
+
+      isdiagonal = false;
+      for (iter2 = iter1; iter2 != triangles.end(); iter2++) {
+        if (iter1 == iter2) {
+          continue;
+        }
+        poly2 = &(*iter2);
+
+        for (i21 = 0; i21 < poly2->GetNumPoints(); i21++) {
+          if ((d2.x != poly2->GetPoint(i21).x) || (d2.y != poly2->GetPoint(i21).y)) {
+            continue;
+          }
+          i22 = (i21 + 1) % (poly2->GetNumPoints());
+          if ((d1.x != poly2->GetPoint(i22).x) || (d1.y != poly2->GetPoint(i22).y)) {
+            continue;
+          }
+          isdiagonal = true;
+          break;
+        }
+        if (isdiagonal) {
+          break;
+        }
+      }
+
+      if (!isdiagonal) {
+        continue;
+      }
+
+      p2 = poly1->GetPoint(i11);
+      if (i11 == 0) {
+        i13 = poly1->GetNumPoints() - 1;
+      } else {
+        i13 = i11 - 1;
+      }
+      p1 = poly1->GetPoint(i13);
+      if (i22 == (poly2->GetNumPoints() - 1)) {
+        i23 = 0;
+      } else {
+        i23 = i22 + 1;
+      }
+      p3 = poly2->GetPoint(i23);
+
+      if (!IsConvex(p1, p2, p3)) {
+        continue;
+      }
+
+      p2 = poly1->GetPoint(i12);
+      if (i12 == (poly1->GetNumPoints() - 1)) {
+        i13 = 0;
+      } else {
+        i13 = i12 + 1;
+      }
+      p3 = poly1->GetPoint(i13);
+      if (i21 == 0) {
+        i23 = poly2->GetNumPoints() - 1;
+      } else {
+        i23 = i21 - 1;
+      }
+      p1 = poly2->GetPoint(i23);
+
+      if (!IsConvex(p1, p2, p3)) {
+        continue;
+      }
+
+      newpoly.Init(poly1->GetNumPoints() + poly2->GetNumPoints() - 2);
+      k = 0;
+      for (j = i12; j != i11; j = (j + 1) % (poly1->GetNumPoints())) {
+        newpoly[k] = poly1->GetPoint(j);
+        k++;
+      }
+      for (j = i22; j != i21; j = (j + 1) % (poly2->GetNumPoints())) {
+        newpoly[k] = poly2->GetPoint(j);
+        k++;
+      }
+
+      triangles.erase(iter2);
+      *iter1 = newpoly;
+      poly1 = &(*iter1);
+      i11 = -1;
+
+      continue;
+    }
+  }
+
+  for (iter1 = triangles.begin(); iter1 != triangles.end(); iter1++) {
+    parts->push_back(*iter1);
+  }
+
+  return 1;
+}
+
+int TPPLPartition::ConvexPartition_HM_Fast(TPPLPolyList *inpolys, TPPLPolyList *parts) {
+  TPPLPolyList outpolys;
+  TPPLPolyList::iterator iter;
+
+  if (!RemoveHoles(inpolys, &outpolys)) {
+    return 0;
+  }
+  for (iter = outpolys.begin(); iter != outpolys.end(); iter++) {
+    if (!ConvexPartition_HM_Fast(&(*iter), parts)) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 // Minimum-weight polygon triangulation by dynamic programming.
 // Time complexity: O(n^3)
 // Space complexity: O(n^2)

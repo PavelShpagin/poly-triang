@@ -26,10 +26,9 @@ echo "[2/3] Build PolyPartition baselines..."
   -o "${BIN_DIR}/polypartition_mono_cli"
 
 "${CXX}" "${CXXFLAGS[@]}" \
-  -I "${ROOT}/code/baselines/polypartition/src" \
-  "${ROOT}/code/cli/polypartition_hm_cli.cpp" \
-  "${ROOT}/code/baselines/polypartition/src/polypartition.cpp" \
-  -o "${BIN_DIR}/polypartition_hm_cli"
+  "${ROOT}/code/cli/cgal_hm_cli.cpp" \
+  -lgmp -lmpfr \
+  -o "${BIN_DIR}/cgal_hm_cli"
 
 echo "[3/3] Build Seidel baseline..."
 SEIDEL_DIR="${ROOT}/code/baselines/Seidel"
@@ -47,6 +46,6 @@ SEIDEL_DIR="${ROOT}/code/baselines/Seidel"
 echo "Built:"
 echo "  - ${BIN_DIR}/reflex_cli"
 echo "  - ${BIN_DIR}/polypartition_mono_cli"
-echo "  - ${BIN_DIR}/polypartition_hm_cli"
+echo "  - ${BIN_DIR}/cgal_hm_cli"
 echo "  - ${BIN_DIR}/seidel_cli"
 

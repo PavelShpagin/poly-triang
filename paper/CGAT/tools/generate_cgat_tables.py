@@ -121,7 +121,7 @@ def main() -> None:
     lines: List[str] = []
     lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
-    lines.append("\\caption{Running time (ms) on convex and random polygons (mean $\\pm$ stdev over instances).}")
+    lines.append("\\caption{Running time (ms) on convex, dent, and random polygons (mean $\\pm$ stdev over instances).}")
     lines.append("\\label{tab:benchmark}")
     lines.append("\\small")
     lines.append("\\begin{tabular}{llrrrrr}")
@@ -129,7 +129,7 @@ def main() -> None:
     lines.append("Type & $n$ & $k$ & \\textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\\\")
     lines.append("\\midrule")
 
-    main_families = ["convex", "random"]
+    main_families = ["convex", "dent", "random"]
     for fi, fam in enumerate(main_families):
         fam_label = FAMILY_LABEL.get(fam, fam.capitalize())
         first = True
@@ -173,7 +173,7 @@ def main() -> None:
     # between the appendix heading and the table.
     full.append("\\begin{table}[H]")
     full.append("\\centering")
-    full.append("\\caption{Running time (ms) across polygon families (mean over instances).}")
+    full.append("\\caption{Running time (ms) across polygon families (mean $\\pm$ stdev over instances).}")
     full.append("\\label{tab:benchmark-full}")
     full.append("\\small")
     full.append("\\begin{tabular}{llrrrrr}")
