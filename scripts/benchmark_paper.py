@@ -197,11 +197,20 @@ def run_cli(exe: Path, poly_path: Path, out_path: Path, timeout: int = 300) -> O
     if not exe.exists():
         return None
     try:
+        cmd = [str(exe), "--input", str(poly_path), "--output", str(out_path)]
+        # Be explicit about implementation choice for our binary (no hidden fallbacks).
+        if exe.name == "reflex_cli":
+            cmd += ["--algo", "chain"]
         proc = subprocess.run(
-            [str(exe), "--input", str(poly_path), "--output", str(out_path)],
+            cmd,
             capture_output=True, text=True, timeout=timeout
         )
         if proc.returncode != 0:
+            log(f"ERROR: {exe.name} failed (code={proc.returncode})")
+            if proc.stdout.strip():
+                print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
+            if proc.stderr.strip():
+                print(proc.stderr, end="" if proc.stderr.endswith("\n") else "\n", file=sys.stderr)
             return None
         kv = parse_kv_output(proc.stdout)
         time_ms = float(kv.get("time_ms", "0"))
@@ -209,9 +218,11 @@ def run_cli(exe: Path, poly_path: Path, out_path: Path, timeout: int = 300) -> O
         reflex = int(kv["reflex_count"]) if "reflex_count" in kv else None
         return RunResult(time_ms=time_ms, triangles=triangles, reflex_count=reflex)
     except subprocess.TimeoutExpired:
-        return None  # Graceful timeout
+        log(f"ERROR: {exe.name} timed out after {timeout}s")
+        return None
     except Exception:
-        return None  # Graceful crash handling
+        log(f"ERROR: {exe.name} crashed (exception)")
+        raise
 
 
 def main() -> None:
