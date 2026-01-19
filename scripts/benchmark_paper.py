@@ -248,7 +248,8 @@ def main() -> None:
     executables = {
         "ours": BIN_DIR / "reflex_cli",
         "garey": BIN_DIR / "polypartition_mono_cli",
-        "hertel": BIN_DIR / "polypartition_hm_cli",
+        # Prefer CGAL HM baseline (no O(n^2) merge), fall back to PolyPartition HM if needed.
+        "hertel": (BIN_DIR / "cgal_hm_cli") if (BIN_DIR / "cgal_hm_cli").exists() else (BIN_DIR / "polypartition_hm_cli"),
         "seidel": BIN_DIR / "seidel_cli",
     }
     

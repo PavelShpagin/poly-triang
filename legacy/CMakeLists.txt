@@ -58,11 +58,14 @@ if (CGAL_FOUND)
   target_link_libraries(cgal_polygon_cli PRIVATE baseline_common CGAL::CGAL CGAL::CGAL_Core)
   add_executable(cgal_gen_cli src/cgal_gen_cli.cpp)
   target_link_libraries(cgal_gen_cli PRIVATE baseline_common CGAL::CGAL CGAL::CGAL_Core)
+  # CGAL Hertel–Mehlhorn approximate convex partition baseline CLI (paper/CGAT)
+  add_executable(cgal_hm_cli ${CMAKE_SOURCE_DIR}/paper/CGAT/code/cli/cgal_hm_cli.cpp)
+  target_link_libraries(cgal_hm_cli PRIVATE baseline_common CGAL::CGAL CGAL::CGAL_Core)
   set_target_properties(polytri_cli cgal_polygon_cli
       PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${BUILD_OUTPUT_DIR}
   )
-  set_target_properties(cgal_gen_cli PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${BUILD_OUTPUT_DIR})
+  set_target_properties(cgal_gen_cli cgal_hm_cli PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${BUILD_OUTPUT_DIR})
 else()
   message(STATUS "CGAL not found; skipping cgal_polygon_cli")
   set_target_properties(polytri_cli seidel_cli
