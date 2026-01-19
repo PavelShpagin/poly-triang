@@ -747,6 +747,60 @@ The remaining (publishability-critical) step is a clean proof that the above spl
 \end{itemize}
 With those in place, (W2) becomes a direct corollary, and (W1) reduces to the ray-shooting lemma under the ``no hidden reflex extrema below'' invariant.
 
+\begin{lemma}[Preservation under split update]
+\label{lem:preserve-split}
+Assume component \(C\) satisfies the reflex-list invariant and edge-ownership invariant before processing a split vertex \(r\).
+After performing the Split update described above (cut off the region strictly below \(y(r)\), remove consumed guards, and insert one new adjacent guard pair tagged by \(r\)),
+the resulting component \(C'\) satisfies:
+\begin{itemize}
+  \item the reflex-list invariant (between consecutive reflex nodes: 0 guards or exactly 2 guards),
+  \item the edge-ownership invariant (each active boundary edge is traversable by at most one guard iterator per side),
+  \item and the floor-interval disjointness/order property at any later query height \(y'>y(r)\) (Lemma~\ref{lem:floor-intervals} continues to apply).
+\end{itemize}
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+Only the boundary edges in the cut-off subchain are removed; all remaining boundary arcs are unchanged.
+In \(L(C)\), the only local modification is replacing a neighborhood containing \(r\) and its consumed guards by a single new 2-guard block \((g_L^{\mathrm{new}},g_R^{\mathrm{new}})\) between \(r\)'s two reflex neighbors.
+Thus the ``0-or-2'' structure is preserved everywhere else, and holds at the replacement site by construction.
+
+For ownership: all iterators attached to removed guards disappear together with their owned arcs.
+The two new guards are initialized at the two chord supports and are declared the unique owners of the two incident arcs of the new floor pocket; no other guard's owned arc overlaps them because those arcs are newly exposed boundary above the supports.
+Hence no surviving boundary edge gains a second owner on either side.
+
+Finally, floor intervals remain disjoint/ordered because the update does not create crossings: it removes a simply connected subpolygon and introduces a new pocket boundary whose two incident arcs are subchains of the original boundary.
+Planarity implies the induced intersections with any horizontal line above \(y(r)\) preserve order, so Lemma~\ref{lem:floor-intervals} remains valid for later steps.
+\end{proof}
+
+\begin{lemma}[Preservation under merge update]
+\label{lem:preserve-merge}
+Assume component \(C\) satisfies the reflex-list invariant, the floor-interval property (Lemma~\ref{lem:floor-intervals}) at the merge height \(y(r)\),
+and the edge-ownership invariant before processing a merge vertex \(r\).
+After performing the Merge update described above (split \(C\) into \(C_{\text{left}},C_{\text{right}}\) along the chord supports, split \(L(C)\), and replace the used guard pair by new guard pairs tagged by \(r\)),
+each new component satisfies the reflex-list and edge-ownership invariants, and Lemma~\ref{lem:floor-intervals} applies to future merge processing within each component.
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+The merge split partitions the boundary cycle into two boundary cycles by cutting at the two support locations and reconnecting through \(r\).
+This operation does not introduce self-intersections because the supports are found by horizontal ray shooting and the chords lie inside the polygon.
+Thus each resulting cycle is a simple component boundary.
+
+On the reflex list: splitting \(L(C)\) at the used guard pair and distributing nodes according to which boundary cycle they lie on preserves the cyclic order of nodes along each new boundary.
+Within each new component, any pre-existing 2-guard blocks remain intact (they lie on one side of the split), and the used block is replaced by one new 2-guard block adjacent to \(r\) by construction.
+Hence the 0-or-2 structure holds.
+
+On ownership: every pre-existing guard keeps ownership of exactly the same boundary arc, now residing in exactly one of the two new components.
+The only new owners are the two new guard pairs adjacent to \(r\), whose owned arcs are disjoint subchains immediately above the supports on each side.
+No surviving guard owned those arcs previously (they were not on any floor pocket boundary), so ownership remains unique.
+
+Finally, floor-interval disjointness/order is preserved within each new component by planarity: the split is along a chord supported by the ray-shooting edges, so it cannot interleave two previously disjoint floor pockets.
+Therefore Lemma~\ref{lem:floor-intervals} continues to hold component-wise for subsequent merge steps.
+\end{proof}
+
+\paragraph{Corollary (W2 from preservation + ownership).}
+Under the update rules and preservation lemmas above, the edge-ownership invariant holds at all times.
+Therefore Lemma~\ref{lem:edge-ownership} applies globally, implying the total work of all lift pointer-walks is \(O(n)\).
+
 \paragraph{Why this can be \(O(n)\) total walking (the intended charging argument).}
 Assume that every time a boundary iterator advances past an edge \(e\) during some lift,
 either (i) \(e\) lies strictly below the chord(s) inserted at that step and is immediately removed from the active component(s), or
