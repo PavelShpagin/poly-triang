@@ -801,6 +801,41 @@ Therefore Lemma~\ref{lem:floor-intervals} continues to hold component-wise for s
 Under the update rules and preservation lemmas above, the edge-ownership invariant holds at all times.
 Therefore Lemma~\ref{lem:edge-ownership} applies globally, implying the total work of all lift pointer-walks is \(O(n)\).
 
+\section{Experiments (preliminary)}
+\label{sec:experiments}
+We report preliminary wall-clock timings from the repository benchmark harness (\texttt{scripts/benchmark\_paper.py}) comparing:
+(i) our implementation (\texttt{build/bin/reflex\_cli}), (ii) Garey-style monotone decomposition via PolyPartition (\texttt{polypartition\_mono\_cli}),
+(iii) a Hertel--Mehlhorn baseline implemented with CGAL's \texttt{approx\_convex\_partition\_2} (\texttt{cgal\_hm\_cli}), and (iv) Seidel's baseline (\texttt{seidel\_cli}).
+All methods receive the same input polygons.
+
+\paragraph{Caveat (baseline stability at very large \(n\)).}
+At \(n=10^5\), some external baselines may fail (crash or report failure) in this harness; we therefore focus the comparison below on sizes where all baselines succeed.
+We keep the benchmark runner ``honest'': failures and timeouts are printed in full and recorded as missing values.
+
+\begin{table}[H]
+\centering
+\caption{Preliminary timings (ms), 3 runs each, Jan 2026.}
+\label{tab:prelim-times}
+\begin{tabular}{lrrrrr}
+\toprule
+Family & \(n\) & ours & Garey & Hertel (CGAL) & Seidel \\
+\midrule
+convex & 1{,}000 & 0.027 & 0.184 & 1.782 & 7.654 \\
+convex & 10{,}000 & 0.093 & 1.763 & 125.696 & 9.192 \\
+dent & 1{,}000 & 0.088 & 0.231 & 1.572 & 5.798 \\
+dent & 10{,}000 & 0.808 & 1.887 & 96.133 & 9.284 \\
+random & 1{,}000 & 0.324 & 0.327 & 4.376 & 5.750 \\
+random & 10{,}000 & 2.952 & 3.725 & 200.817 & 14.333 \\
+star & 1{,}000 & 0.340 & 0.275 & 3.161 & 7.114 \\
+star & 10{,}000 & 2.815 & 2.914 & 149.561 & 11.664 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The main takeaways are consistent with the \(O(n+k\log k)\) story:
+on nearly convex inputs (convex/dent), the event set is tiny and we see large constant-factor wins over \(O(n\log n)\) baselines,
+while on highly nonconvex inputs (random/star, \(r\approx n/2\)) the performance is competitive with classical monotone decomposition.
+
 \paragraph{Why this can be \(O(n)\) total walking (the intended charging argument).}
 Assume that every time a boundary iterator advances past an edge \(e\) during some lift,
 either (i) \(e\) lies strictly below the chord(s) inserted at that step and is immediately removed from the active component(s), or

@@ -51,6 +51,20 @@ def rotate_points(points: List[Tuple[float, float]], angle_rad: float) -> List[T
     sa = math.sin(angle_rad)
     return [(ca * x - sa * y, sa * x + ca * y) for (x, y) in points]
 
+def perturb_points(points: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """
+    Deterministic tiny perturbation to reduce degeneracies (equal y / collinearity)
+    that can cause some external baselines to fail at large n.
+    This is applied uniformly to all algorithms (same input polygon), and is far
+    below geometric scale (coordinates are ~O(1e2)).
+    """
+    epsx = 1e-12
+    epsy = 2e-12
+    out: List[Tuple[float, float]] = []
+    for i, (x, y) in enumerate(points):
+        out.append((x + epsx * i, y + epsy * (i + 1)))
+    return out
+
 def below_idx(points: List[Tuple[float, float]], a: int, b: int) -> bool:
     """Strict total order used for local-maxima counting (matches reflex_cli tie-break)."""
     ay = points[a][1]
@@ -95,7 +109,7 @@ def convex_polygon(n: int, seed: int = 0) -> List[Tuple[float, float]]:
     # Optional small extra rotation (still affine).
     ang = 0.15 * (2.0 * rng.random() - 1.0)
     pts = rotate_points(pts, ang)
-    return [(sx * x + shx * y, shy * x + sy * y) for (x, y) in pts]
+    return perturb_points([(sx * x + shx * y, shy * x + sy * y) for (x, y) in pts])
 
 def dent_polygon(n: int, seed: int) -> List[Tuple[float, float]]:
     """Near-monotone polygon with a single dent (typically k=2)."""
@@ -126,7 +140,7 @@ def dent_polygon(n: int, seed: int) -> List[Tuple[float, float]]:
         new_pt = apply_depth(depth)
         safe += 1
     pts[imax] = new_pt
-    return pts
+    return perturb_points(pts)
 
 
 def random_polygon(n: int, seed: int) -> List[Tuple[float, float]]:
@@ -137,7 +151,7 @@ def random_polygon(n: int, seed: int) -> List[Tuple[float, float]]:
     for angle in angles:
         rr = 100.0 * (0.4 + 0.6 * rng.random())
         points.append((rr * math.cos(angle), rr * math.sin(angle)))
-    return rotate_points(points, ROT_ANGLE)
+    return perturb_points(rotate_points(points, ROT_ANGLE))
 
 
 def star_polygon(n: int, seed: int = 0) -> List[Tuple[float, float]]:
@@ -157,7 +171,7 @@ def star_polygon(n: int, seed: int = 0) -> List[Tuple[float, float]]:
         pts.pop()
     while len(pts) < n:
         pts.append((pts[-1][0] + 1e-7 * (len(pts) - n + 1), pts[-1][1]))
-    return rotate_points(pts, ROT_ANGLE)
+    return perturb_points(rotate_points(pts, ROT_ANGLE))
 
 
 def spiral_polygon(n: int, seed: int = 0) -> List[Tuple[float, float]]:
@@ -170,7 +184,7 @@ def spiral_polygon(n: int, seed: int = 0) -> List[Tuple[float, float]]:
         angle = 2 * math.pi * turns * t
         rr = start + (end - start) * t
         pts.append((rr * math.cos(angle), rr * math.sin(angle)))
-    return pts
+    return perturb_points(pts)
 
 
 @dataclass
@@ -250,7 +264,9 @@ def main() -> None:
         "garey": BIN_DIR / "polypartition_mono_cli",
         # Prefer CGAL HM baseline (no O(n^2) merge), fall back to PolyPartition HM if needed.
         "hertel": (BIN_DIR / "cgal_hm_cli") if (BIN_DIR / "cgal_hm_cli").exists() else (BIN_DIR / "polypartition_hm_cli"),
-        "seidel": BIN_DIR / "seidel_cli",
+        # Prefer the baseline used in the CGAT artifact for small/medium n.
+        # (Some Seidel implementations are unstable at very large n; failures are surfaced explicitly.)
+        "seidel": (BIN_DIR / "seidel_cli") if (BIN_DIR / "seidel_cli").exists() else (BIN_DIR / "polytri_cli"),
     }
     
     # Check which executables exist
@@ -352,7 +368,11 @@ def main() -> None:
                         best_speedup = max(speedups.values()) if speedups else 0
                         speedup_str = f"{best_speedup:.1f}x" if best_speedup > 0 else "--"
 
-                        log(f"  n={n:>7,} r={int(r_avg):>6,} ({r_avg/n*100:4.0f}%): ours={ours_str:>8}ms garey={garey_str:>8}ms seidel={seidel_str:>8}ms [{speedup_str}]")
+                        log(
+                            f"  n={n:>7,} r={int(r_avg):>6,} ({r_avg/n*100:4.0f}%): "
+                            f"ours={ours_str:>8}ms garey={garey_str:>8}ms hertel={hertel_str:>8}ms seidel={seidel_str:>8}ms "
+                            f"[{speedup_str}]"
+                        )
 
                         # Save to results dict
                         results[(ptype, n)] = {
@@ -374,7 +394,7 @@ def main() -> None:
     log("\n" + "=" * 70)
     log("SUMMARY: Our O(n + r log r) vs O(n log n) baselines")
     log("=" * 70)
-    log(f"{'Type':<10} {'n':>10} {'r':>8} {'Ours (ms)':>12} {'Garey':>12} {'Seidel':>12}")
+    log(f"{'Type':<10} {'n':>10} {'r':>8} {'Ours (ms)':>12} {'Garey':>12} {'Hertel':>12} {'Seidel':>12}")
     log("-" * 70)
     
     for ptype in polygon_types.keys():
@@ -383,8 +403,9 @@ def main() -> None:
             if rec:
                 ours = f"{rec['ours_mean']:.3f}" if rec['ours_mean'] else "--"
                 garey = f"{rec['garey_mean']:.3f}" if rec.get('garey_mean') else "--"
+                hertel = f"{rec['hertel_mean']:.3f}" if rec.get('hertel_mean') else "--"
                 seidel = f"{rec['seidel_mean']:.3f}" if rec.get('seidel_mean') else "--"
-                log(f"{ptype:<10} {n:>10,} {int(rec['r_avg']):>8,} {ours:>12} {garey:>12} {seidel:>12}")
+                log(f"{ptype:<10} {n:>10,} {int(rec['r_avg']):>8,} {ours:>12} {garey:>12} {hertel:>12} {seidel:>12}")
     
     log("\nKey insight: For r << n, our O(n + r log r) beats O(n log n).")
     log("Benchmark complete!")
