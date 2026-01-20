@@ -16,6 +16,9 @@ import argparse
 from typing import List, Tuple
 
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+
 def simple_random_poly(n: int, seed: int = 0) -> List[Tuple[float, float]]:
     rng = random.Random(seed + n * 1000)
     angles = sorted([rng.random() * 2 * math.pi for _ in range(n)])
@@ -138,12 +141,22 @@ def main() -> int:
         poly_path = "/tmp/diag_check.poly"
         write_poly(pts, poly_path)
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Prefer the reproducible build output (build.sh builds this).
-    diag_dbg = os.path.join(script_dir, "bin/diag_debug_cli")
+    # Prefer the reproducible build output (paper/CGAT/build.sh builds this).
+    diag_dbg = os.path.join(ROOT, "bin", "diag_debug_cli")
     if not os.path.exists(diag_dbg):
-        diag_dbg = os.path.join(script_dir, "code/ours/diag_debug_cli")
+        # Fallback for local dev builds (not used in the artifact pipeline).
+        diag_dbg = os.path.join(ROOT, "code", "ours", "diag_debug_cli")
+    if not os.path.exists(diag_dbg):
+        print(f"diag_debug_cli not found at '{os.path.join(ROOT, 'bin', 'diag_debug_cli')}'.")
+        print("Run ./build.sh (or ./reproduce.sh) from paper/CGAT first.")
+        return 2
+
     res = subprocess.run([diag_dbg, "--input", poly_path], capture_output=True, text=True)
+    if res.returncode != 0:
+        print("diag_debug_cli failed:")
+        print(res.stdout[:500])
+        print(res.stderr[:500])
+        return 2
     diags = parse_diagonals_from_diag_debug(res.stdout)
     if not diags:
         print("Failed to parse diagonals from diag_debug_cli output.")
