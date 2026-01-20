@@ -27,7 +27,10 @@ pdflatex -interaction=nonstopmode -halt-on-error submission.tex
 
 #### Known follow-ups (not done)
 
-- **Artifact duplication**: the CGAT artifact under `paper/CGAT/code/ours/` duplicates code from `methods/`. Keeping them in sync is manual.
+- **Artifact duplication (intentionally kept minimal)**: `paper/CGAT/code/ours/` still duplicates a small subset of the implementation that also exists under `methods/`.
+  This is intentional to keep the `paper/CGAT/` artifact self-contained for reproduction. After cleanup, the duplicated surface area is limited to:
+  `reflex_chain_triangulate.hpp`, `reflex_fast_linked.hpp`, `reflex_cli.cpp`, and the correctness/debug helper `diag_debug_cli.cpp` (plus a README).
+  If we ever decide that self-contained reproduction is not needed, we can fully de-duplicate by building the CGAT binaries directly from `methods/` (but then `paper/CGAT/` would no longer be standalone).
 - **Naming collisions**: there are multiple `reflex_tri::Point/Triangle/Triangulator` definitions across different headers; mixing them in one TU will break.
 - **Potential perf hot-spot**: face-walk reverse-index construction currently does an \(O(\\sum \\deg(v)^2)\\) scan; if this shows up in profiles, consider building per-vertex “neighbor→slot” maps after angular sort.
 
