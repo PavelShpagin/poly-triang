@@ -18,6 +18,12 @@ echo "[1/3] Build ours..."
   "${ROOT}/code/ours/reflex_cli.cpp" \
   -o "${BIN_DIR}/reflex_cli"
 
+echo "[1b/3] Build diag_debug_cli (for correctness checks)..."
+"${CXX}" "${CXXFLAGS[@]}" \
+  -I "${ROOT}/code/ours" \
+  "${ROOT}/code/ours/diag_debug_cli.cpp" \
+  -o "${BIN_DIR}/diag_debug_cli"
+
 echo "[2/3] Build PolyPartition baselines..."
 "${CXX}" "${CXXFLAGS[@]}" \
   -I "${ROOT}/code/baselines/polypartition/src" \
@@ -45,6 +51,7 @@ SEIDEL_DIR="${ROOT}/code/baselines/Seidel"
 
 echo "Built:"
 echo "  - ${BIN_DIR}/reflex_cli"
+echo "  - ${BIN_DIR}/diag_debug_cli"
 echo "  - ${BIN_DIR}/polypartition_mono_cli"
 echo "  - ${BIN_DIR}/cgal_hm_cli"
 echo "  - ${BIN_DIR}/seidel_cli"
