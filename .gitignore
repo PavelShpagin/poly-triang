@@ -36,6 +36,9 @@ paper/*.fdb_latexmk
 paper/*.bbl
 paper/*.blg
 
+# Local scratch / one-off debug artifacts (never commit)
+paper/legacy/_scratch_untracked/
+
 # OS
 .DS_Store
 Thumbs.db
