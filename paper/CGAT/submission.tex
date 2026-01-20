@@ -620,6 +620,7 @@ Benchmarks were run under WSL2 (Linux kernel 6.6.87.2) on a 13th Gen Intel(R) Co
 \paragraph{Benchmark setup.}
 We report \emph{mean $\pm$ standard deviation} of the \emph{elapsed time} (ms) printed by each executable for each $(\text{family}, n)$ configuration (seeds $0,\dots,4$), with \texttt{polygons\_per\_config=5}.
 We perform one unrecorded warm-up run per executable before collecting timings to reduce cold-start bias from code paging and dynamic loader effects.
+To reduce scheduling noise, we pin each run to a single CPU core (Linux \texttt{sched\_setaffinity} when available); this is applied uniformly to all algorithms.
 To reduce systematic warm/cold bias and cache interference from extremely slow baselines, we benchmark in blocks per $(\text{family}, n)$: we run the fast algorithms (ours, Garey) across all seeds first, then run the slower baselines (Seidel, Hertel--Mehlhorn).
 All polygon families are generated deterministically from the seed and $n$, followed by a fixed rotation to avoid accidental equal-$y$ degeneracies.
 The \textsc{Random} family uses the same generator as \texttt{scripts/generate\_polygons.py}: vertices are sampled by sorting random angles and assigning random radii (yielding a simple star-shaped polygon).

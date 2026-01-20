@@ -17,6 +17,7 @@ python3 "${CGAT_DIR}/tools/benchmark_cgat.py" \
   --sizes 500,1000,2000,5000,10000 \
   --runs 5 \
   --timeout 10 \
+  --pin-cpu 0 \
   --bin-dir "${CGAT_DIR}/bin" \
   --out-csv "${CGAT_DIR}/generated/benchmark_results.csv" \
   --out-raw "${CGAT_DIR}/generated/benchmark_results_raw.csv"

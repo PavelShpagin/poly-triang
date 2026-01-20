@@ -988,22 +988,10 @@ private:
     // For performance, we use a simple per-vertex sort for small n (lower constant),
     // and a linear-time radix counting sort for larger n. The cutoff is a fixed constant,
     // so asymptotic complexity remains O(n).
-    static constexpr int kSmallPhase3N = 20000;
-    const bool small_phase3 = (n <= kSmallPhase3N);
-    if (small_phase3) {
-      auto key = [&](int u, int v) -> int {
-        int d = v - u;
-        if (d <= 0) d += n;
-        return d;  // 1..n-1, increasing along CCW boundary order
-      };
-      for (int u = 0; u < n; ++u) {
-        const int beg = adj_off_[u];
-        const int end = adj_off_[u + 1];
-        if (end - beg <= 2) continue;
-        std::sort(adj_flat_.begin() + beg, adj_flat_.begin() + end,
-                  [&](int a, int b) { return key(u, a) < key(u, b); });
-      }
-    } else {
+    // Always use the linear-time radix ordering of directed half-edges.
+    // This avoids O(n) tiny std::sort calls (one per vertex), which can dominate
+    // at small/medium n and introduce high variance.
+    {
       // Linear-time neighbor ordering via radix counting sort over directed half-edges.
       if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
       for (int u = 0; u < n; ++u) {

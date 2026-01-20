@@ -97,6 +97,11 @@ int main(int argc, char** argv) {
     const auto args = parse_args(argc, argv);
     const auto pts = read_poly(args.input);
 
+    // Time the full computation needed to obtain triangle indices (excluding output I/O),
+    // including conversion of the input polygon into the library's representation.
+    // This matches the semantics of our "ours" timing (the full CPU time of triangulate()).
+    const double t0 = cpu_now_ms();
+
     TPPLPoly poly;
     poly.Init(static_cast<long>(pts.size()));
     for (long i = 0; i < poly.GetNumPoints(); ++i) {
@@ -110,9 +115,7 @@ int main(int argc, char** argv) {
     TPPLPartition partition;
     TPPLPolyList triangles;
 
-    const double t0 = cpu_now_ms();
     const int ok = partition.Triangulate_MONO(&poly, &triangles);
-    const double t1 = cpu_now_ms();
 
     if (ok == 0) {
       throw std::runtime_error("Triangulate_MONO failed");
@@ -125,6 +128,7 @@ int main(int argc, char** argv) {
       out_tris.push_back({tri[0].id, tri[1].id, tri[2].id});
     }
 
+    const double t1 = cpu_now_ms();
     const double elapsed_ms = (t1 - t0);
 
     write_tri(args.output, pts, out_tris);
