@@ -17,12 +17,17 @@ SIZES="${CGAT_SIZES:-500,1000,2000,5000,10000}"
 RUNS="${CGAT_RUNS:-5}"
 TIMEOUT="${CGAT_TIMEOUT:-10}"
 PIN_CPU="${CGAT_PIN_CPU:-0}"
+OUTDIR="${CGAT_OUTDIR:-${CGAT_DIR}/generated}"
+SKIP_PDF="${CGAT_SKIP_PDF:-0}"
+KEEP_TEX_TEMP="${CGAT_KEEP_TEX_TEMP:-0}"
 
 echo "  types:   ${TYPES}"
 echo "  sizes:   ${SIZES}"
 echo "  runs:    ${RUNS}"
 echo "  timeout: ${TIMEOUT}s"
 echo "  pin-cpu: ${PIN_CPU}"
+echo "  outdir:  ${OUTDIR}"
+echo "  pdf:     $([ "${SKIP_PDF}" = "1" ] && echo "skip" || echo "build")"
 
 python3 "${CGAT_DIR}/tools/benchmark_cgat.py" \
   --types "${TYPES}" \
@@ -31,21 +36,32 @@ python3 "${CGAT_DIR}/tools/benchmark_cgat.py" \
   --timeout "${TIMEOUT}" \
   --pin-cpu "${PIN_CPU}" \
   --bin-dir "${CGAT_DIR}/bin" \
-  --out-csv "${CGAT_DIR}/generated/benchmark_results.csv" \
-  --out-raw "${CGAT_DIR}/generated/benchmark_results_raw.csv"
+  --out-csv "${OUTDIR}/benchmark_results.csv" \
+  --out-raw "${OUTDIR}/benchmark_results_raw.csv"
 
 echo "[4/5] Update CGAT LaTeX tables from raw benchmark CSV..."
 python3 "${CGAT_DIR}/tools/generate_cgat_tables.py" \
-  --input "${CGAT_DIR}/generated/benchmark_results_raw.csv" \
-  --outdir "${CGAT_DIR}/generated"
+  --input "${OUTDIR}/benchmark_results_raw.csv" \
+  --outdir "${OUTDIR}"
 
 echo "[5/5] Build submission PDF..."
 cd "${CGAT_DIR}"
-pdflatex -interaction=nonstopmode -halt-on-error submission.tex
-pdflatex -interaction=nonstopmode -halt-on-error submission.tex
+if [ "${SKIP_PDF}" != "1" ]; then
+  pdflatex -interaction=nonstopmode -halt-on-error submission.tex
+  pdflatex -interaction=nonstopmode -halt-on-error submission.tex
+fi
+
+if [ "${KEEP_TEX_TEMP}" != "1" ]; then
+  echo "Cleaning LaTeX temporary files..."
+  rm -f submission.aux submission.log submission.out submission.spl submission.toc \
+        submission.bbl submission.blg submission.fls submission.fdb_latexmk \
+        submission.lof submission.lot submission.synctex.gz 2>/dev/null || true
+fi
 
 echo "Done:"
-echo "  - ${CGAT_DIR}/generated/benchmark_table.tex"
-echo "  - ${CGAT_DIR}/generated/benchmark_full.tex"
-echo "  - ${CGAT_DIR}/submission.pdf"
+echo "  - ${OUTDIR}/benchmark_table.tex"
+echo "  - ${OUTDIR}/benchmark_full.tex"
+if [ "${SKIP_PDF}" != "1" ]; then
+  echo "  - ${CGAT_DIR}/submission.pdf"
+fi
 

@@ -490,11 +490,15 @@ private:
       ++ch.curr;
       const int vreg = ch.verts[ch.curr];
       if (types_[vreg] != VType::Regular) continue;
-      // REGULAR/left-chain case (PolyPartition): Below(v_i, v_{i-1}).
+      // REGULAR vertex handling (textbook sweep):
+      // Resolve a pending MERGE helper at regular vertices on the "left chain".
+      //
+      // In the standard monotone-decomposition sweep for a CCW polygon, a regular vertex
+      // is on the left chain iff its next boundary vertex is below it.
       // These vertices can resolve a pending MERGE helper in O(1) amortized time
       // without being explicit sweep events.
-      const int prev = (vreg - 1 + n) % n;
-      if (!detail::below(pts, vreg, prev)) continue;
+      const int nxt = (vreg + 1) % n;
+      if (!detail::below(pts, nxt, vreg)) continue;
 
       if (ch.pending != -1) {
         add_diagonal_unique(vreg, ch.pending, /*event_v=*/vreg, VType::Regular,
@@ -887,6 +891,9 @@ private:
       } else if (ev.type == VType::End) {
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for End");
+        // Ensure we process any regular vertices on this chain down to the current sweep level
+        // (this can clear a pending merge helper) before we emit an end-vertex diagonal.
+        advance_chain(rid, pts);
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,
@@ -918,6 +925,9 @@ private:
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for Merge");
 
+        // Ensure we process any regular vertices on this chain down to the current sweep level
+        // (this can clear a pending merge helper) before we emit a merge-vertex diagonal.
+        advance_chain(rid, pts);
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,

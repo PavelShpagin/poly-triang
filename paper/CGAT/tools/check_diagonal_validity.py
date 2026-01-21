@@ -218,6 +218,9 @@ def main() -> int:
     if len(bad_cross) > 20:
         print("  ...")
 
+    # Treat any reported issue as a failure (artifact should fail-fast on correctness bugs).
+    if bad_boundary or bad_cross:
+        return 1
     return 0
 
 
