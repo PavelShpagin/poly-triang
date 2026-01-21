@@ -2,6 +2,9 @@
 set -euo pipefail
 
 CGAT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTDIR="${CGAT_OUTDIR:-${CGAT_DIR}/generated}"
+SKIP_PDF="${CGAT_SKIP_PDF:-0}"
+KEEP_TEX_TEMP="${CGAT_KEEP_TEX_TEMP:-0}"
 
 echo "[1/5] Build binaries..."
 chmod +x "${CGAT_DIR}/build.sh" "${CGAT_DIR}/tools/"*.py
@@ -11,15 +14,20 @@ echo "[2/5] Sanity-check correctness (no crossings on sampled diagonals)..."
 python3 "${CGAT_DIR}/tools/check_diagonal_validity.py" --n 500 --seed 0
 python3 "${CGAT_DIR}/tools/check_diagonal_validity.py" --n 500 --seed 1
 
+echo "[2b/5] Visual sanity-check: render triangulation SVGs (ours) ..."
+FIG_DIR="${OUTDIR}/figures"
+python3 "${CGAT_DIR}/tools/visualize_triangulation.py" \
+  --bin "${CGAT_DIR}/bin/reflex_cli" \
+  --outdir "${FIG_DIR}" \
+  --n "${CGAT_VIZ_N:-200}" \
+  --seed "${CGAT_VIZ_SEED:-0}"
+
 echo "[3/5] Run benchmarks (paper sizes)..."
 TYPES="${CGAT_TYPES:-convex,dent,random}"
 SIZES="${CGAT_SIZES:-500,1000,2000,5000,10000}"
 RUNS="${CGAT_RUNS:-5}"
 TIMEOUT="${CGAT_TIMEOUT:-10}"
 PIN_CPU="${CGAT_PIN_CPU:-0}"
-OUTDIR="${CGAT_OUTDIR:-${CGAT_DIR}/generated}"
-SKIP_PDF="${CGAT_SKIP_PDF:-0}"
-KEEP_TEX_TEMP="${CGAT_KEEP_TEX_TEMP:-0}"
 
 echo "  types:   ${TYPES}"
 echo "  sizes:   ${SIZES}"
