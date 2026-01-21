@@ -7,10 +7,13 @@ No third-party dependencies: writes plain SVG (polygon boundary + triangle edges
 Usage (typical from paper/CGAT):
   python3 tools/visualize_triangulation.py --bin ./bin/reflex_cli --outdir generated/figures
 
-Outputs:
+Outputs (written into --outdir):
   - triangulation_convex.svg
   - triangulation_dent.svg
   - triangulation_random.svg
+  - polygon_convex.poly / triangulation_convex.tri
+  - polygon_dent.poly   / triangulation_dent.tri
+  - polygon_random.poly / triangulation_random.tri
 """
 
 from __future__ import annotations
@@ -201,8 +204,9 @@ def main() -> None:
     if not exe.exists():
         raise SystemExit(f"ERROR: binary not found: {exe}")
 
-    tmp = args.outdir / "_tmp"
-    tmp.mkdir(parents=True, exist_ok=True)
+    # Review-friendly: keep the exact polygon inputs (.poly) and triangulation outputs (.tri)
+    # alongside the SVGs, so a reviewer can open them without hunting for temp directories.
+    args.outdir.mkdir(parents=True, exist_ok=True)
 
     families = [
         ("convex", convex_polygon),
@@ -212,8 +216,8 @@ def main() -> None:
 
     for name, gen in families:
         pts = gen(args.n, args.seed)
-        poly_path = tmp / f"{name}.poly"
-        tri_path = tmp / f"{name}.tri"
+        poly_path = args.outdir / f"polygon_{name}.poly"
+        tri_path = args.outdir / f"triangulation_{name}.tri"
         write_poly(pts, poly_path)
         run_cli(exe, poly_path, tri_path)
         tri = read_tri(tri_path)
