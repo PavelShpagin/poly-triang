@@ -17,7 +17,6 @@ python3 "${CGAT_DIR}/tools/check_diagonal_validity.py" --n 500 --seed 1
 echo "[2b/5] Visual sanity-check: render triangulation SVGs (ours) ..."
 FIG_DIR="${OUTDIR}/figures"
 python3 "${CGAT_DIR}/tools/visualize_triangulation.py" \
-  --bin "${CGAT_DIR}/bin/reflex_cli" \
   --mode decomposition \
   --diag-debug "${CGAT_DIR}/bin/diag_debug_cli" \
   --outdir "${FIG_DIR}" \

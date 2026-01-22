@@ -96,6 +96,15 @@ def write_poly(points: List[Tuple[float, float]], path: Path) -> None:
         for x, y in points:
             f.write(f"{x:.17g} {y:.17g}\n")
 
+def read_poly(path: Path) -> List[Tuple[float, float]]:
+    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    n = int(lines[0])
+    pts: List[Tuple[float, float]] = []
+    for i in range(n):
+        x, y = map(float, lines[1 + i].split())
+        pts.append((x, y))
+    return pts
+
 
 @dataclass(frozen=True)
 class Triangulation:
@@ -260,10 +269,16 @@ def read_decomposition_diagonals(diag_debug_exe: Path, poly_path: Path) -> List[
         diags.append((a, b))
     return sorted(set(diags))
 
+def write_diag_csv(path: Path, diags: List[Tuple[int, int]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("a,b\n")
+        for a, b in diags:
+            f.write(f"{a},{b}\n")
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bin", type=Path, required=True, help="Path to reflex_cli binary")
+    ap.add_argument("--bin", type=Path, required=False, help="Path to reflex_cli binary (required for --mode triangulation)")
     ap.add_argument(
         "--mode",
         choices=["decomposition", "triangulation"],
@@ -281,9 +296,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0, help="Seed for each family")
     args = ap.parse_args()
 
-    exe = args.bin
-    if not exe.exists():
-        raise SystemExit(f"ERROR: binary not found: {exe}")
+    exe: Optional[Path] = args.bin
 
     # Review-friendly: keep the exact polygon inputs (.poly) and triangulation outputs (.tri)
     # alongside the SVGs, so a reviewer can open them without hunting for temp directories.
@@ -291,11 +304,17 @@ def main() -> None:
 
     diag_exe: Optional[Path] = args.diag_debug
     if args.mode == "decomposition" and diag_exe is None:
-        guess = exe.parent / "diag_debug_cli"
-        if guess.exists():
-            diag_exe = guess
+        if exe is not None:
+            guess = exe.parent / "diag_debug_cli"
+            if guess.exists():
+                diag_exe = guess
     if args.mode == "decomposition" and diag_exe is None:
         raise SystemExit("ERROR: --mode decomposition requires --diag-debug (or bin/diag_debug_cli next to reflex_cli)")
+    if args.mode == "triangulation":
+        if exe is None:
+            raise SystemExit("ERROR: --mode triangulation requires --bin (reflex_cli)")
+        if not exe.exists():
+            raise SystemExit(f"ERROR: binary not found: {exe}")
 
     families = [
         ("convex", convex_polygon),
@@ -306,17 +325,24 @@ def main() -> None:
     for name, gen in families:
         pts = gen(args.n, args.seed)
         poly_path = args.outdir / f"polygon_{name}.poly"
-        tri_path = args.outdir / f"triangulation_{name}.tri"
         write_poly(pts, poly_path)
-        run_cli(exe, poly_path, tri_path)
-        tri = read_tri(tri_path)
         out_svg = args.outdir / f"triangulation_{name}.svg"
+
+        # Render either decomposition diagonals (Phase 2) or triangulation diagonals (Phase 3).
         title = f"{name} (n={args.n}, seed={args.seed})"
         edges_override = None
         if args.mode == "decomposition":
             edges_override = read_decomposition_diagonals(diag_exe, poly_path)  # type: ignore[arg-type]
             title += f" | decomposition diagonals={len(edges_override)}"
-        write_svg(out_svg, title, tri, edges_override=edges_override)
+            write_diag_csv(args.outdir / f"decomposition_diagonals_{name}.csv", edges_override)
+            # For decomposition mode we render directly from the polygon (.poly).
+            tri = Triangulation(verts=read_poly(poly_path), tris=[])
+            write_svg(out_svg, title, tri, edges_override=edges_override)
+        else:
+            tri_path = args.outdir / f"triangulation_{name}.tri"
+            run_cli(exe, poly_path, tri_path)  # type: ignore[arg-type]
+            tri = read_tri(tri_path)
+            write_svg(out_svg, title, tri, edges_override=None)
 
 
 if __name__ == "__main__":
