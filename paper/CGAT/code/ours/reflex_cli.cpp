@@ -19,6 +19,7 @@
 #include <cmath>
 #include <algorithm>
 #include <time.h>
+#include <iomanip>
 
 #include "reflex_fast_linked.hpp"
 #include "reflex_chain_triangulate.hpp"
@@ -122,6 +123,8 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: Cannot open output file: " << output_file << "\n";
             return 1;
         }
+        fout.setf(std::ios::fixed);
+        fout << std::setprecision(17);
         fout << "# vertices\n";
         fout << n << "\n";
         for (int i = 0; i < n; i++) {
@@ -178,6 +181,8 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: Cannot open output file: " << output_file << "\n";
             return 1;
         }
+        fout.setf(std::ios::fixed);
+        fout << std::setprecision(17);
         fout << "# vertices\n";
         fout << n << "\n";
         for (int i = 0; i < n; i++) {

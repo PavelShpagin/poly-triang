@@ -23,6 +23,19 @@ python3 "${CGAT_DIR}/tools/visualize_triangulation.py" \
   --n "${CGAT_VIZ_N:-200}" \
   --seed "${CGAT_VIZ_SEED:-0}"
 
+# Optional: validate and render full Phase-3 triangulations for the small visualization instances.
+if [ "${CGAT_VALIDATE_TRI:-0}" = "1" ]; then
+  python3 "${CGAT_DIR}/tools/visualize_triangulation.py" \
+    --bin "${CGAT_DIR}/bin/reflex_cli" \
+    --mode triangulation \
+    --outdir "${FIG_DIR}" \
+    --n "${CGAT_VIZ_N:-200}" \
+    --seed "${CGAT_VIZ_SEED:-0}"
+  python3 "${CGAT_DIR}/tools/validate_tri.py" --tri "${FIG_DIR}/triangulation_convex.tri"
+  python3 "${CGAT_DIR}/tools/validate_tri.py" --tri "${FIG_DIR}/triangulation_dent.tri"
+  python3 "${CGAT_DIR}/tools/validate_tri.py" --tri "${FIG_DIR}/triangulation_random.tri"
+fi
+
 echo "[3/5] Run benchmarks (paper sizes)..."
 TYPES="${CGAT_TYPES:-convex,dent,random}"
 SIZES="${CGAT_SIZES:-500,1000,2000,5000,10000}"
