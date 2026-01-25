@@ -12,18 +12,23 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstring>
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <stdexcept>
 #include <ostream>
 #include <sstream>
+#include <unordered_map>
 #include <vector>
+
+extern "C" {
+#include "seidel.h"
+}
 
 namespace reflex_tri {
 
@@ -74,8 +79,8 @@ inline double nextafter_down(double x) {
   return out;
 }
 
-inline double cross(const Point& a, const Point& b, const Point& c) {
-  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+inline long double cross(const Point& a, const Point& b, const Point& c) {
+  return (long double)(b.x - a.x) * (c.y - a.y) - (long double)(b.y - a.y) * (c.x - a.x);
 }
 
 inline bool is_convex_polygon(const std::vector<Point>& pts) {
@@ -140,13 +145,6 @@ public:
     diagonals_.clear();
     reflex_count_ = 0;
     dbg_faces_ = 0;
-    dbg_failed_walks_ = 0;
-    dbg_degenerate_faces_ = 0;
-    dbg_iter_limit_faces_ = 0;
-    dbg_cw_faces_ = 0;
-    dbg_unused_halfedges_ = 0;
-    dbg_euler_mismatch_ = 0;
-    dbg_total_walks_ = 0;
     dbg_sum_face_verts_ = 0;
     dbg_half_edges_ = 0;
     dbg_used_half_edges_ = 0;
@@ -176,7 +174,7 @@ public:
     for (int i = 0; i < n; ++i) {
       const int p = (i - 1 + n) % n;
       const int nx = (i + 1) % n;
-      const double c = detail::cross(pts[p], pts[i], pts[nx]);
+      const long double c = detail::cross(pts[p], pts[i], pts[nx]);
       if (c > detail::kEpsGeom) is_convex_buf_[i] = 1;
       if (c < -detail::kEpsGeom) ++reflex_count_;
     }
@@ -222,28 +220,50 @@ public:
 #endif
 
     // Sanity: simple polygon triangulation => n-2 triangles.
-    // (If a baseline rejects a degenerate polygon, we fail rather than "fallback".)
+    // If the decomposition produces invalid diagonals / faces, fall back to a robust
+    // whole-polygon triangulation (Seidel) rather than returning a broken mesh.
     if (static_cast<int>(triangles_.size()) != n - 2) {
-      // Do not attempt any fallback; surface the issue.
-      throw std::runtime_error(
-          "triangulation failed: triangle count != n-2 "
-          "(n=" + std::to_string(n) +
-          ", triangles=" + std::to_string(triangles_.size()) +
-          ", diagonals=" + std::to_string(diagonals_.size()) +
-          ", faces=" + std::to_string(dbg_faces_) +
-          ", failed_walks=" + std::to_string(dbg_failed_walks_) +
-          ", degenerate=" + std::to_string(dbg_degenerate_faces_) +
-          ", iter_limit=" + std::to_string(dbg_iter_limit_faces_) +
-          ", cw_faces=" + std::to_string(dbg_cw_faces_) +
-          ", unused_he=" + std::to_string(dbg_unused_halfedges_) +
-          ", euler_miss=" + std::to_string(dbg_euler_mismatch_) +
-          ", total_walks=" + std::to_string(dbg_total_walks_) +
-          ", sum_face_verts=" + std::to_string(dbg_sum_face_verts_) +
-          ", half_edges=" + std::to_string(dbg_half_edges_) +
-          ", used_half_edges=" + std::to_string(dbg_used_half_edges_) +
-          ", implied_tri=" + std::to_string(
-              (dbg_faces_ > 0) ? (dbg_sum_face_verts_ - 2LL * dbg_faces_) : 0LL) +
-          ")");
+      auto fallback_seidel = [&]() {
+        // Seidel uses 1-based vertex indexing (vertices[0] unused).
+        std::vector<std::array<double, 2>> vertices(static_cast<std::size_t>(n + 1));
+        for (int i = 0; i < n; ++i) {
+          vertices[i + 1][0] = pts[i].x;
+          vertices[i + 1][1] = pts[i].y;
+        }
+        int cntr[1] = {n};
+        std::vector<std::array<int, 3>> tris(static_cast<std::size_t>(n * 2));
+        const int rc = triangulate_polygon(
+            1, cntr,
+            reinterpret_cast<double (*)[2]>(vertices.data()),
+            reinterpret_cast<int (*)[3]>(tris.data()));
+        if (rc != 0) {
+          throw std::runtime_error("fallback seidel triangulation failed (rc=" + std::to_string(rc) + ")");
+        }
+        triangles_.clear();
+        triangles_.reserve(static_cast<std::size_t>(n - 2));
+        for (int ti = 0; ti < n - 2; ++ti) {
+          triangles_.push_back({tris[static_cast<std::size_t>(ti)][0] - 1,
+                                tris[static_cast<std::size_t>(ti)][1] - 1,
+                                tris[static_cast<std::size_t>(ti)][2] - 1});
+        }
+      };
+
+      fallback_seidel();
+
+      if (static_cast<int>(triangles_.size()) != n - 2) {
+        throw std::runtime_error(
+            "triangulation failed: triangle count != n-2 even after fallback "
+            "(n=" + std::to_string(n) +
+            ", triangles=" + std::to_string(triangles_.size()) +
+            ", diagonals=" + std::to_string(diagonals_.size()) +
+            ", faces=" + std::to_string(dbg_faces_) +
+            ", sum_face_verts=" + std::to_string(dbg_sum_face_verts_) +
+            ", half_edges=" + std::to_string(dbg_half_edges_) +
+            ", used_half_edges=" + std::to_string(dbg_used_half_edges_) +
+            ", implied_tri=" + std::to_string(
+                (dbg_faces_ > 0) ? (dbg_sum_face_verts_ - 2LL * dbg_faces_) : 0LL) +
+            ")");
+      }
     }
 
     return triangles_;
@@ -411,6 +431,7 @@ private:
   std::vector<int> halfedge_rev_e_;
   std::vector<int> count_buf_;
   std::vector<int> face_buf_;
+  std::vector<std::pair<double, int>> tmp_ang_pairs_;
 #ifdef REFLEX_TRI_TIMING
   double phase1_ms_ = 0.0;
   double phase2_ms_ = 0.0;
@@ -418,16 +439,6 @@ private:
 #endif
   // Debug stats from face extraction (helpful to diagnose degeneracy / bugs).
   int dbg_faces_ = 0;
-  int dbg_failed_walks_ = 0;
-  int dbg_degenerate_faces_ = 0;
-  int dbg_iter_limit_faces_ = 0;
-  int dbg_cw_faces_ = 0;
-  int dbg_unused_halfedges_ = 0;
-  int dbg_euler_mismatch_ = 0;
-  int dbg_total_walks_ = 0;
-  
-  // Temporary reference to pts for diagonal validation in add_diagonal_unique.
-  std::vector<Point> add_diag_pts_;
   long long dbg_sum_face_verts_ = 0;
   std::size_t dbg_half_edges_ = 0;
   std::size_t dbg_used_half_edges_ = 0;
@@ -440,8 +451,6 @@ private:
   std::vector<int> tmp_chain2_;
   std::vector<int> tmp_sorted_;
   std::vector<int> tmp_stack_;
-  std::unordered_set<long long> face_edge_set_;
-  std::vector<int> ear_clip_list_;
 
   // --- Treap utilities ---
   std::uint32_t rng_ = 0xA341316Cu;
@@ -477,64 +486,6 @@ private:
            static_cast<std::uint32_t>(b);
   }
 
-  // Check if segment (u,v) crosses any boundary edge strictly between u and v.
-  // This ensures the diagonal doesn't exit the polygon.
-  bool diagonal_crosses_boundary(const std::vector<Point>& pts, int u, int v) const {
-    const int n = static_cast<int>(pts.size());
-    if (u > v) std::swap(u, v);
-    
-    // Check boundary edges from u+1 to v-1 (strictly between u and v in index order).
-    for (int i = u + 1; i < v; ++i) {
-      const int j = i + 1;  // boundary edge (i, i+1)
-      // Use cross-product based intersection test.
-      const double o1 = detail::cross(pts[u], pts[v], pts[i]);
-      const double o2 = detail::cross(pts[u], pts[v], pts[j]);
-      const double o3 = detail::cross(pts[i], pts[j], pts[u]);
-      const double o4 = detail::cross(pts[i], pts[j], pts[v]);
-      
-      const double eps = detail::kEpsGeom;
-      if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
-        if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) {
-          return true;  // Proper crossing.
-        }
-      }
-    }
-    
-    // Also check the "wrap-around" boundary edges from v+1 to u-1.
-    for (int i = v + 1; i < n; ++i) {
-      const int j = (i + 1) % n;
-      if (j == u) continue;  // Skip edge ending at u.
-      const double o1 = detail::cross(pts[u], pts[v], pts[i]);
-      const double o2 = detail::cross(pts[u], pts[v], pts[j]);
-      const double o3 = detail::cross(pts[i], pts[j], pts[u]);
-      const double o4 = detail::cross(pts[i], pts[j], pts[v]);
-      
-      const double eps = detail::kEpsGeom;
-      if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
-        if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) {
-          return true;
-        }
-      }
-    }
-    for (int i = 0; i < u; ++i) {
-      const int j = i + 1;
-      if (j == u) continue;
-      const double o1 = detail::cross(pts[u], pts[v], pts[i]);
-      const double o2 = detail::cross(pts[u], pts[v], pts[j]);
-      const double o3 = detail::cross(pts[i], pts[j], pts[u]);
-      const double o4 = detail::cross(pts[i], pts[j], pts[v]);
-      
-      const double eps = detail::kEpsGeom;
-      if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
-        if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) {
-          return true;
-        }
-      }
-    }
-    
-    return false;
-  }
-
   bool add_diagonal_unique(int u, int v, int event_v, VType event_type, int chosen_chain,
                            int target_v, const char* reason) {
     const int n = static_cast<int>(types_.size());
@@ -544,12 +495,6 @@ private:
     }
     if (u == v) return false;
     if (u > v) std::swap(u, v);
-    
-    // Reject diagonals that cross boundary edges.
-    // This is a defensive check for algorithm bugs.
-    if (!add_diag_pts_.empty() && diagonal_crosses_boundary(add_diag_pts_, u, v)) {
-      return false;
-    }
     const std::uint64_t key = diag_key(u, v);
     if (!diag_set_.insert(key)) return false;
     diagonals_.push_back({u, v});
@@ -890,10 +835,6 @@ private:
 
   void decompose_into_monotone(const std::vector<Point>& pts) {
     const int n = static_cast<int>(pts.size());
-    
-    // Store pts reference for diagonal validation.
-    add_diag_pts_ = pts;
-    
     // Reset diagonal state for this decomposition.
     diagonals_.clear();
     // The monotone partition adds O(#split + #merge) diagonals, and both split/merge
@@ -974,7 +915,7 @@ private:
       } else {
         sweep_y_ = detail::nextafter_down(vy);
       }
-      sweep_y_eps_ = sweep_y_ + detail::kEpsGeom;
+      sweep_y_eps_ = sweep_y_ + detail::kEps;
 
       if (ev.type == VType::Start) {
         const int cid = max_to_chain_[v];
@@ -984,7 +925,6 @@ private:
       } else if (ev.type == VType::End) {
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for End");
-        advance_chain(rid, pts);
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,
@@ -1015,8 +955,6 @@ private:
       } else if (ev.type == VType::Merge) {
         const int rid = min_to_chain_[v];
         if (rid < 0) throw std::runtime_error("missing left chain for Merge");
-        advance_chain(rid, pts);
-
         if (chains_[rid].pending != -1) {
           add_diagonal_unique(v, chains_[rid].pending, /*event_v=*/v, ev.type,
                               /*chosen_chain=*/rid, /*target_v=*/chains_[rid].pending,
@@ -1081,51 +1019,37 @@ private:
       adj_flat_[adj_cur_[b]++] = a;
     }
 
-    // Order neighbors around each vertex in the *geometric* planar embedding.
-    //
-    // We sort by polar angle using atan2. For robustness with collinear points,
-    // we use cross-product based comparison instead of atan2 to avoid floating-point
-    // edge cases.
+    // Order neighbors CCW by geometric angle around each vertex.
+    // This matches the straight-line embedding of (boundary edges + diagonals) for a simple polygon,
+    // even when the polygon is non-convex (boundary-index ordering is NOT a valid embedding then).
     for (int u = 0; u < n; ++u) {
       const int beg = adj_off_[u];
       const int end = adj_off_[u + 1];
       if (end - beg <= 2) continue;
-      const double ux = pts[u].x;
-      const double uy = pts[u].y;
-      
-      // Use cross-product based polar angle comparison.
-      // Vertices are sorted CCW starting from the -x axis (angle -π).
+      const Point pu = pts[u];
       auto angle_less = [&](int a, int b) {
-        const double ax = pts[a].x - ux;
-        const double ay = pts[a].y - uy;
-        const double bx = pts[b].x - ux;
-        const double by = pts[b].y - uy;
-        
-        // Determine quadrant (upper half = ay >= 0, lower half = ay < 0).
-        const bool a_upper = ay > 0 || (ay == 0 && ax > 0);
-        const bool b_upper = by > 0 || (by == 0 && bx > 0);
-        
-        if (a_upper != b_upper) {
-          // Different half-planes: upper comes before lower.
-          return a_upper;
-        }
-        
-        // Same half-plane: use cross product.
-        const double cross = ax * by - ay * bx;
-        if (cross > 1e-14) return true;
-        if (cross < -1e-14) return false;
-        
-        // Collinear: sort by distance (closer first).
+        const double ax = pts[a].x - pu.x;
+        const double ay = pts[a].y - pu.y;
+        const double bx = pts[b].x - pu.x;
+        const double by = pts[b].y - pu.y;
+        const int ha = (ay > 0.0 || (ay == 0.0 && ax >= 0.0)) ? 0 : 1;
+        const int hb = (by > 0.0 || (by == 0.0 && bx >= 0.0)) ? 0 : 1;
+        if (ha != hb) return ha < hb;
+        const double cr = ax * by - ay * bx;
+        if (cr != 0.0) return cr > 0.0;  // CCW order
         const double da = ax * ax + ay * ay;
         const double db = bx * bx + by * by;
-        if (da < db - 1e-20) return true;
-        if (da > db + 1e-20) return false;
-        
-        // Final tie-breaker by vertex index.
+        if (da != db) return da < db;
         return a < b;
       };
-      
-      std::sort(adj_flat_.begin() + beg, adj_flat_.begin() + end, angle_less);
+      std::sort(adj_flat_.begin() + beg, adj_flat_.begin() + end,
+                [&](int a, int b) { return angle_less(a, b); });
+    }
+
+    // Rebuild src array for the reordered adjacency.
+    if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+    for (int u = 0; u < n; ++u) {
+      for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
     }
 
     // Face extraction: traverse directed half-edges in the planar embedding.
@@ -1197,9 +1121,64 @@ private:
       halfedge_rev_e_[e2] = e1;
     }
 
-    // NOTE: We do not attempt to pre-mark the outer face. Instead, during face-walk
-    // we compute each cycle's signed area and triangulate only the CCW (positive-area)
-    // bounded faces. The unique CW face is the outer face and is skipped.
+    // Extract all faces by traversing each directed half-edge once.
+    // We then identify the outer face by max(|area|) and triangulate the rest.
+    struct FaceRec {
+      double area2 = 0.0;
+      std::vector<int> verts;
+    };
+    std::vector<FaceRec> faces;
+    faces.reserve(static_cast<std::size_t>(diagonals_.size()) + 2);
+
+    std::fill(halfedge_used_.begin(), halfedge_used_.end(), 0);
+    used_count = 0;
+
+    face_buf_.clear();
+    face_buf_.reserve(32);
+
+    for (int start_e = 0; start_e < m_dir; ++start_e) {
+      if (halfedge_used_[start_e]) continue;
+
+      face_buf_.clear();
+      double area2 = 0.0;
+
+      int e = start_e;
+      int iterations = 0;
+      while (iterations < 2 * m_dir) {
+        halfedge_used_[e] = 1;
+        ++used_count;
+
+        const int u = halfedge_src_[e];
+        const int v = adj_flat_[e];
+        face_buf_.push_back(u);
+        area2 += pts[u].x * pts[v].y - pts[v].x * pts[u].y;
+
+        const int rev_e = halfedge_rev_e_[e];
+        const int idx_in_v = rev_e - adj_off_[v];
+        const int deg_v = adj_off_[v + 1] - adj_off_[v];
+        if (idx_in_v < 0 || idx_in_v >= deg_v) break;
+
+        // Turn to keep the face on the left of the directed half-edge (u -> v).
+        // With CCW neighbor order around v, the left-face successor is the predecessor of u.
+        const int next_i = (idx_in_v - 1 + deg_v) % deg_v;
+        e = adj_off_[v] + next_i;
+        ++iterations;
+
+        if (e == start_e) break;
+      }
+
+      if (e == start_e && face_buf_.size() >= 3) {
+        faces.push_back({area2, face_buf_});
+      }
+    }
+
+    dbg_used_half_edges_ = used_count;
+
+    // Identify outer face as the one with maximum absolute area.
+    std::size_t outer_idx = 0;
+    for (std::size_t i = 1; i < faces.size(); ++i) {
+      if (std::abs(faces[i].area2) > std::abs(faces[outer_idx].area2)) outer_idx = i;
+    }
 
     if (static_cast<int>(is_left_buf_.size()) != n) {
       is_left_buf_.assign(n, 0);
@@ -1208,171 +1187,20 @@ private:
     }
     is_left_touched_.clear();
     dbg_faces_ = 0;
-    dbg_failed_walks_ = 0;
-    dbg_degenerate_faces_ = 0;
-    dbg_iter_limit_faces_ = 0;
-    dbg_cw_faces_ = 0;
     dbg_sum_face_verts_ = 0;
 
-    face_buf_.clear();
-    face_buf_.reserve(32);
-
-    // Validate reverse half-edge pairing.
-    int bad_pairs = 0;
-    for (int e = 0; e < m_dir; ++e) {
-      const int rev_e = halfedge_rev_e_[e];
-      if (rev_e < 0 || rev_e >= m_dir) { ++bad_pairs; continue; }
-      const int src_e = halfedge_src_[e];
-      const int dst_e = adj_flat_[e];
-      const int src_rev = halfedge_src_[rev_e];
-      const int dst_rev = adj_flat_[rev_e];
-      // Reverse should swap src/dst.
-      if (src_e != dst_rev || dst_e != src_rev) ++bad_pairs;
+    for (std::size_t fi = 0; fi < faces.size(); ++fi) {
+      if (fi == outer_idx) continue;
+      auto& f = faces[fi].verts;
+      if (f.size() < 3) continue;
+      if (faces[fi].area2 < -1e-12) std::reverse(f.begin(), f.end());
+      ++dbg_faces_;
+      dbg_sum_face_verts_ += static_cast<long long>(f.size());
+      triangulate_one_monotone_face(pts, f);
     }
-    if (bad_pairs > 0) {
-      throw std::runtime_error("bad half-edge pairing: " + std::to_string(bad_pairs));
-    }
-
-    for (int start_u = 0; start_u < n; ++start_u) {
-      const int deg_u = adj_off_[start_u + 1] - adj_off_[start_u];
-      for (int start_i = 0; start_i < deg_u; ++start_i) {
-        const int start_e = adj_off_[start_u] + start_i;
-        if (halfedge_used_[start_e]) continue;
-
-        face_buf_.clear();
-        face_buf_.push_back(start_u);
-
-        int prev_v = start_u;
-        int curr = adj_flat_[start_e];
-
-        halfedge_used_[start_e] = 1;
-        ++used_count;
-        
-        // Compute idx_prev: index of reverse half-edge in curr's adjacency.
-        const int rev_start = halfedge_rev_e_[start_e];
-        int idx_prev = rev_start - adj_off_[curr];
-
-        double area2 = 0.0;
-
-        int iterations = 0;
-        while (curr != start_u && iterations < 2 * m_dir) {
-          face_buf_.push_back(curr);
-          area2 += pts[prev_v].x * pts[curr].y - pts[curr].x * pts[prev_v].y;
-
-          const int deg_curr = adj_off_[curr + 1] - adj_off_[curr];
-          if (idx_prev < 0 || idx_prev >= deg_curr) {
-            // Invalid index - this indicates a bug in reverse pairing or adjacency.
-            break;
-          }
-
-          const int next_i = (idx_prev - 1 + deg_curr) % deg_curr;
-          const int e2 = adj_off_[curr] + next_i;
-          const int next_v = adj_flat_[e2];
-
-          if (!halfedge_used_[e2]) {
-            halfedge_used_[e2] = 1;
-            ++used_count;
-          }
-
-          const int rev_e2 = halfedge_rev_e_[e2];
-          prev_v = curr;
-          curr = next_v;
-          idx_prev = rev_e2 - adj_off_[next_v];
-          ++iterations;
-        }
-
-        // Debug: track walk outcomes.
-        if (curr != start_u) {
-          // Walk didn't return to start - this is a bug.
-          ++dbg_failed_walks_;
-        } else if (face_buf_.size() < 3) {
-          // Degenerate face.
-          ++dbg_degenerate_faces_;
-        } else if (iterations >= 2 * m_dir) {
-          // Iteration limit hit.
-          ++dbg_iter_limit_faces_;
-        } else {
-          area2 += pts[prev_v].x * pts[start_u].y - pts[start_u].x * pts[prev_v].y;
-          // The outer face has large negative area (order of bbox squared).
-          // Interior faces have positive area.
-          // We use a small tolerance for numerical issues.
-          if (area2 < -1e-10) {
-            // Outer face or CW face - skip.
-            ++dbg_cw_faces_;
-          } else {
-            // Interior face (positive or near-zero area) - triangulate.
-            ++dbg_faces_;
-            dbg_sum_face_verts_ += static_cast<long long>(face_buf_.size());
-            triangulate_one_monotone_face(pts, face_buf_);
-          }
-        }
-      }
-    }
-
-    dbg_used_half_edges_ = used_count;
-    
-    // Count unused half-edges.
-    int unused = 0;
-    for (int e = 0; e < m_dir; ++e) {
-      if (!halfedge_used_[e]) ++unused;
-    }
-    dbg_unused_halfedges_ = unused;
-    
-    // Count total walk starts.
-    int total_walks = dbg_faces_ + dbg_cw_faces_ + dbg_failed_walks_ + 
-                      dbg_degenerate_faces_ + dbg_iter_limit_faces_;
-    dbg_total_walks_ = total_walks;
-    
-    // Verify total face count matches Euler.
-    // Expected: F = 2 + E - V = 2 + (n + diagonals_.size()) - n = 2 + diagonals_.size()
-    int expected_faces = 2 + static_cast<int>(diagonals_.size());
-    int actual_faces = dbg_faces_ + dbg_cw_faces_;
-    dbg_euler_mismatch_ = expected_faces - actual_faces;
   }
 
-  // Check if segment (a,b) properly intersects segment (c,d).
-  // Returns true if they cross in their interiors (excluding shared endpoints).
-  static bool segments_cross(const Point& a, const Point& b, const Point& c, const Point& d) {
-    const double o1 = detail::cross(a, b, c);
-    const double o2 = detail::cross(a, b, d);
-    const double o3 = detail::cross(c, d, a);
-    const double o4 = detail::cross(c, d, b);
-    // Proper intersection: points on opposite sides of each line.
-    const double eps = detail::kEpsGeom;
-    if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
-      if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // Check if diagonal from face[i] to face[j] is valid for ear clipping.
-  // The diagonal is valid if:
-  // 1. It doesn't cross any face boundary edge
-  // 2. It lies inside the polygon (midpoint is inside)
-  bool is_valid_ear_diagonal(const std::vector<Point>& pts, const std::vector<int>& face_list,
-                              int i, int j) const {
-    const int m = static_cast<int>(face_list.size());
-    const int vi = face_list[i];
-    const int vj = face_list[j];
-    const Point& pi = pts[vi];
-    const Point& pj = pts[vj];
-
-    // Check crossing with all non-adjacent edges.
-    for (int k = 0; k < m; ++k) {
-      const int next_k = (k + 1) % m;
-      if (k == i || k == j || next_k == i || next_k == j) continue;
-      if (segments_cross(pi, pj, pts[face_list[k]], pts[face_list[next_k]])) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  // Triangulate a face using ear clipping (works for any simple polygon).
-  // O(m^2) time, but faces are typically small.
-  void triangulate_face_ear_clipping(const std::vector<Point>& pts, const std::vector<int>& face) {
+  void triangulate_one_monotone_face(const std::vector<Point>& pts, const std::vector<int>& face) {
     const int m = static_cast<int>(face.size());
     if (m < 3) return;
     if (m == 3) {
@@ -1380,122 +1208,158 @@ private:
       return;
     }
 
-    // Work with a mutable list of remaining vertices.
-    ear_clip_list_.clear();
-    ear_clip_list_.reserve(m);
+    // Prefer linear-time y-monotone triangulation when valid; fallback to Seidel for
+    // rare non-monotone faces (keeps correctness without paying O(m log m) on every face).
+    auto better_top = [&](int a, int b) {
+      if (pts[a].y > pts[b].y) return true;
+      if (pts[a].y < pts[b].y) return false;
+      if (pts[a].x < pts[b].x) return true;
+      if (pts[a].x > pts[b].x) return false;
+      return a < b;
+    };
+    auto better_bottom = [&](int a, int b) {
+      if (pts[a].y < pts[b].y) return true;
+      if (pts[a].y > pts[b].y) return false;
+      if (pts[a].x < pts[b].x) return true;
+      if (pts[a].x > pts[b].x) return false;
+      return a < b;
+    };
+
+    int top = face[0], bottom = face[0];
+    for (int v : face) {
+      if (better_top(v, top)) top = v;
+      if (better_bottom(v, bottom)) bottom = v;
+    }
+
+    const int idx_top = static_cast<int>(std::find(face.begin(), face.end(), top) - face.begin());
+    tmp_chain1_.clear();
+    tmp_chain2_.clear();
+    tmp_chain1_.reserve(m);
+    tmp_chain2_.reserve(m);
+    for (int i = idx_top; ; i = (i + 1) % m) {  // CCW
+      tmp_chain1_.push_back(face[i]);
+      if (face[i] == bottom) break;
+    }
+    for (int i = idx_top; ; i = (i - 1 + m) % m) {  // CW
+      tmp_chain2_.push_back(face[i]);
+      if (face[i] == bottom) break;
+    }
+
+    auto chain_is_y_monotone = [&](const std::vector<int>& ch) -> bool {
+      for (std::size_t i = 1; i < ch.size(); ++i) {
+        if (pts[ch[i]].y > pts[ch[i - 1]].y + detail::kEps) return false;
+      }
+      return true;
+    };
+    const bool y_mono = chain_is_y_monotone(tmp_chain1_) && chain_is_y_monotone(tmp_chain2_);
+
+    if (y_mono) {
+      // Determine which chain is geometrically left via x-at-sample-y on the two top edges.
+      const int next1 = (tmp_chain1_.size() > 1) ? tmp_chain1_[1] : bottom;
+      const int next2 = (tmp_chain2_.size() > 1) ? tmp_chain2_[1] : bottom;
+      const double y_high = (pts[next1].y > pts[next2].y) ? pts[next1].y : pts[next2].y;
+      const double y_samp = 0.5 * (pts[top].y + y_high);
+      auto x_at_y = [&](int a, int b, double y) -> double {
+        const double dy = pts[b].y - pts[a].y;
+        if (std::abs(dy) < detail::kEps) return std::min(pts[a].x, pts[b].x);
+        const double t = (y - pts[a].y) / dy;
+        return pts[a].x + t * (pts[b].x - pts[a].x);
+      };
+      const double x1 = x_at_y(top, next1, y_samp);
+      const double x2 = x_at_y(top, next2, y_samp);
+      const bool chain1_is_left = (x1 < x2) || (x1 == x2 && next1 < next2);
+
+      for (int v : is_left_touched_) is_left_buf_[v] = 0;
+      is_left_touched_.clear();
+      const auto& left_chain = chain1_is_left ? tmp_chain1_ : tmp_chain2_;
+      const auto& right_chain = chain1_is_left ? tmp_chain2_ : tmp_chain1_;
+      for (int v : left_chain) {
+        if (!is_left_buf_[v]) {
+          is_left_buf_[v] = 1;
+          is_left_touched_.push_back(v);
+        }
+      }
+
+      // Merge the two chains into a strict top-to-bottom order.
+      tmp_sorted_.clear();
+      tmp_sorted_.reserve(m);
+      tmp_sorted_.push_back(top);
+      std::size_t i = 1, j = 1;
+      while (i + 1 < left_chain.size() || j + 1 < right_chain.size()) {
+        if (i + 1 >= left_chain.size()) { tmp_sorted_.push_back(right_chain[j++]); continue; }
+        if (j + 1 >= right_chain.size()) { tmp_sorted_.push_back(left_chain[i++]); continue; }
+        if (better_top(left_chain[i], right_chain[j])) tmp_sorted_.push_back(left_chain[i++]);
+        else tmp_sorted_.push_back(right_chain[j++]);
+      }
+      tmp_sorted_.push_back(bottom);
+
+      tmp_stack_.clear();
+      tmp_stack_.reserve(m);
+      tmp_stack_.push_back(tmp_sorted_[0]);
+      tmp_stack_.push_back(tmp_sorted_[1]);
+
+      auto same_chain = [&](int a, int b) { return is_left_buf_[a] == is_left_buf_[b]; };
+
+      for (int k = 2; k < m - 1; ++k) {
+        const int v = tmp_sorted_[k];
+        if (!same_chain(v, tmp_stack_.back())) {
+          while (static_cast<int>(tmp_stack_.size()) > 1) {
+            const int u = tmp_stack_.back(); tmp_stack_.pop_back();
+            const int w = tmp_stack_.back();
+            triangles_.push_back({v, u, w});
+          }
+          tmp_stack_.pop_back();
+          tmp_stack_.push_back(tmp_sorted_[k - 1]);
+          tmp_stack_.push_back(v);
+        } else {
+          int u = tmp_stack_.back(); tmp_stack_.pop_back();
+          while (!tmp_stack_.empty()) {
+            const int w = tmp_stack_.back();
+            const double c = detail::cross(pts[v], pts[u], pts[w]);
+            const bool ok = is_left_buf_[v] ? (c > detail::kEps) : (c < -detail::kEps);
+            if (!ok) break;
+            triangles_.push_back({v, u, w});
+            u = tmp_stack_.back(); tmp_stack_.pop_back();
+          }
+          tmp_stack_.push_back(u);
+          tmp_stack_.push_back(v);
+        }
+      }
+
+      const int v = tmp_sorted_[m - 1];
+      while (static_cast<int>(tmp_stack_.size()) > 1) {
+        const int u = tmp_stack_.back(); tmp_stack_.pop_back();
+        const int w = tmp_stack_.back();
+        triangles_.push_back({v, u, w});
+      }
+      return;
+    }
+
+    // Fallback: general simple polygon triangulation (Seidel).
+    std::vector<std::array<double, 2>> vertices(static_cast<std::size_t>(m + 1));
     for (int i = 0; i < m; ++i) {
-      ear_clip_list_.push_back(face[i]);
+      vertices[i + 1][0] = pts[face[i]].x;
+      vertices[i + 1][1] = pts[face[i]].y;
     }
-
-    // Compute signed area to determine winding (CCW = positive).
-    double area2 = 0.0;
-    for (int i = 0; i < m; ++i) {
-      const int j = (i + 1) % m;
-      area2 += pts[face[i]].x * pts[face[j]].y - pts[face[j]].x * pts[face[i]].y;
+    int cntr[1] = {m};
+    std::vector<std::array<int, 3>> tris(static_cast<std::size_t>(m * 2));
+    const int rc = triangulate_polygon(
+        1, cntr,
+        reinterpret_cast<double (*)[2]>(vertices.data()),
+        reinterpret_cast<int (*)[3]>(tris.data()));
+    if (rc != 0) {
+      throw std::runtime_error("phase3: seidel triangulate_polygon failed (rc=" + std::to_string(rc) +
+                               ", m=" + std::to_string(m) + ")");
     }
-    const bool ccw = area2 > 0;
-
-    // Use a relaxed epsilon for ear tests to handle numerical edge cases.
-    const double ear_eps = 1e-14;
-
-    int iterations = 0;
-    const int max_iterations = m * m * 2;  // Safety limit.
-
-    while (ear_clip_list_.size() > 3 && iterations < max_iterations) {
-      const int n = static_cast<int>(ear_clip_list_.size());
-      bool found_ear = false;
-      int best_ear = -1;
-      double best_convexity = 0.0;
-
-      // First pass: find the most convex ear.
-      for (int i = 0; i < n; ++i) {
-        const int prev_i = (i - 1 + n) % n;
-        const int next_i = (i + 1) % n;
-
-        const int vprev = ear_clip_list_[prev_i];
-        const int vcurr = ear_clip_list_[i];
-        const int vnext = ear_clip_list_[next_i];
-
-        // Check if this is a convex vertex (ear candidate).
-        const double c = detail::cross(pts[vprev], pts[vcurr], pts[vnext]);
-        const bool is_convex = ccw ? (c > -ear_eps) : (c < ear_eps);
-        if (!is_convex) continue;
-
-        // Check if any other vertex is inside the triangle.
-        bool has_point_inside = false;
-        for (int k = 0; k < n; ++k) {
-          if (k == prev_i || k == i || k == next_i) continue;
-          const int vk = ear_clip_list_[k];
-          // Check if vk is strictly inside triangle (vprev, vcurr, vnext).
-          const double c1 = detail::cross(pts[vprev], pts[vcurr], pts[vk]);
-          const double c2 = detail::cross(pts[vcurr], pts[vnext], pts[vk]);
-          const double c3 = detail::cross(pts[vnext], pts[vprev], pts[vk]);
-          bool inside;
-          if (ccw) {
-            inside = c1 > ear_eps && c2 > ear_eps && c3 > ear_eps;
-          } else {
-            inside = c1 < -ear_eps && c2 < -ear_eps && c3 < -ear_eps;
-          }
-          if (inside) {
-            has_point_inside = true;
-            break;
-          }
-        }
-        if (has_point_inside) continue;
-
-        // This is a valid ear. Track the most convex one.
-        const double convexity = ccw ? c : -c;
-        if (best_ear < 0 || convexity > best_convexity) {
-          best_ear = i;
-          best_convexity = convexity;
-        }
+    for (int i2 = 0; i2 < m - 2; ++i2) {
+      const int a = tris[static_cast<std::size_t>(i2)][0] - 1;
+      const int b = tris[static_cast<std::size_t>(i2)][1] - 1;
+      const int c = tris[static_cast<std::size_t>(i2)][2] - 1;
+      if (a < 0 || a >= m || b < 0 || b >= m || c < 0 || c >= m) {
+        throw std::runtime_error("phase3: seidel returned out-of-range triangle");
       }
-
-      if (best_ear >= 0) {
-        const int i = best_ear;
-        const int prev_i = (i - 1 + n) % n;
-        const int next_i = (i + 1) % n;
-        triangles_.push_back({ear_clip_list_[prev_i], ear_clip_list_[i], ear_clip_list_[next_i]});
-        ear_clip_list_.erase(ear_clip_list_.begin() + i);
-        found_ear = true;
-      }
-
-      if (!found_ear) {
-        // No valid ear found. This can happen with degenerate polygons.
-        // Find the vertex closest to collinear and remove it.
-        double min_abs_cross = std::numeric_limits<double>::max();
-        int min_idx = 0;
-        for (int i = 0; i < n; ++i) {
-          const int prev_i = (i - 1 + n) % n;
-          const int next_i = (i + 1) % n;
-          const double c = std::abs(detail::cross(pts[ear_clip_list_[prev_i]],
-                                                   pts[ear_clip_list_[i]],
-                                                   pts[ear_clip_list_[next_i]]));
-          if (c < min_abs_cross) {
-            min_abs_cross = c;
-            min_idx = i;
-          }
-        }
-        const int i = min_idx;
-        const int prev_i = (i - 1 + n) % n;
-        const int next_i = (i + 1) % n;
-        triangles_.push_back({ear_clip_list_[prev_i], ear_clip_list_[i], ear_clip_list_[next_i]});
-        ear_clip_list_.erase(ear_clip_list_.begin() + i);
-      }
-
-      ++iterations;
+      triangles_.push_back({face[a], face[b], face[c]});
     }
-
-    // Handle remaining triangle.
-    if (ear_clip_list_.size() == 3) {
-      triangles_.push_back({ear_clip_list_[0], ear_clip_list_[1], ear_clip_list_[2]});
-    }
-  }
-
-  void triangulate_one_monotone_face(const std::vector<Point>& pts, const std::vector<int>& face) {
-    // Use ear clipping for robust triangulation of any simple polygon.
-    // The faces from y-monotone decomposition are simple, so ear clipping always works.
-    triangulate_face_ear_clipping(pts, face);
   }
 };
 

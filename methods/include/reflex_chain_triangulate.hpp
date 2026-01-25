@@ -38,7 +38,8 @@ struct Triangle {
 
 namespace detail {
 
-static constexpr double kEps = 1e-12;
+static constexpr double kEpsGeom = 1e-10;
+static constexpr double kEpsMath = 1e-16;
 
 inline double nextafter_up(double x) {
   // Next representable double toward +infinity (exact, no libm call).
@@ -72,8 +73,8 @@ inline double nextafter_down(double x) {
   return out;
 }
 
-inline double cross(const Point& a, const Point& b, const Point& c) {
-  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+inline long double cross(const Point& a, const Point& b, const Point& c) {
+  return (long double)(b.x - a.x) * (c.y - a.y) - (long double)(b.y - a.y) * (c.x - a.x);
 }
 
 inline bool is_convex_polygon(const std::vector<Point>& pts) {
@@ -84,10 +85,10 @@ inline bool is_convex_polygon(const std::vector<Point>& pts) {
     const int p = (i == 0) ? (n - 1) : (i - 1);
     const int nx = (i + 1 == n) ? 0 : (i + 1);
     const double c = cross(pts[p], pts[i], pts[nx]);
-    if (c > kEps) {
+    if (c > kEpsGeom) {
       if (sign < 0) return false;
       sign = 1;
-    } else if (c < -kEps) {
+    } else if (c < -kEpsGeom) {
       if (sign > 0) return false;
       sign = -1;
     }
@@ -110,8 +111,9 @@ inline bool below(const std::vector<Point>& pts, int a, int b) {
   // - primary: y (smaller y is below)
   // - tie: x (larger x is below)  [matches PolyPartition convention]
   // - final tie: index (larger index is below) to guarantee strict ordering
-  if (pts[a].y < pts[b].y) return true;
-  if (pts[a].y > pts[b].y) return false;
+  if (std::abs(pts[a].y - pts[b].y) > kEpsGeom) {
+    return pts[a].y < pts[b].y;
+  }
   if (pts[a].x > pts[b].x) return true;
   if (pts[a].x < pts[b].x) return false;
   return a > b;
@@ -125,7 +127,7 @@ inline bool is_reflex_vertex_ccw(const std::vector<Point>& pts, int i) {
   const int n = static_cast<int>(pts.size());
   const int p = (i - 1 + n) % n;
   const int nx = (i + 1) % n;
-  return cross(pts[p], pts[i], pts[nx]) < -kEps;
+  return cross(pts[p], pts[i], pts[nx]) < -kEpsGeom;
 }
 
 }  // namespace detail
@@ -166,9 +168,9 @@ public:
     for (int i = 0; i < n; ++i) {
       const int p = (i - 1 + n) % n;
       const int nx = (i + 1) % n;
-      const double c = detail::cross(pts[p], pts[i], pts[nx]);
-      if (c > detail::kEps) is_convex_buf_[i] = 1;
-      if (c < -detail::kEps) ++reflex_count_;
+      const long double c = detail::cross(pts[p], pts[i], pts[nx]);
+      if (c > detail::kEpsGeom) is_convex_buf_[i] = 1;
+      if (c < -detail::kEpsGeom) ++reflex_count_;
     }
     // Roughly, the number of decomposition diagonals is O(reflex_count_).
     diagonals_.reserve(static_cast<std::size_t>(reflex_count_) + 8);
@@ -333,7 +335,7 @@ private:
       // Move down the chain until current edge spans y.
       const int old_curr = curr;
       while (curr + 1 < static_cast<int>(verts.size()) &&
-             pts[verts[curr + 1]].y > y + detail::kEps) {
+             pts[verts[curr + 1]].y > y + detail::kEpsMath) {
         ++curr;
       }
       if (curr + 1 >= static_cast<int>(verts.size())) {
@@ -516,7 +518,7 @@ private:
       ch.edge_b = b;
       const auto& p = pts[a];
       const auto& q = pts[b];
-      if (std::abs(p.y - q.y) < detail::kEps) {
+      if (std::abs(p.y - q.y) < detail::kEpsMath) {
         ch.edge_slope = 0.0;
         ch.edge_base_x = std::min(p.x, q.x);
       } else {
@@ -830,7 +832,7 @@ private:
       c.edge_b = b;
       const auto& p = pts[a];
       const auto& q = pts[b];
-      if (std::abs(p.y - q.y) < detail::kEps) {
+      if (std::abs(p.y - q.y) < detail::kEpsMath) {
         c.edge_slope = 0.0;
         c.edge_base_x = std::min(p.x, q.x);
       } else {
@@ -877,7 +879,7 @@ private:
       } else {
         sweep_y_ = detail::nextafter_down(vy);
       }
-      sweep_y_eps_ = sweep_y_ + detail::kEps;
+      sweep_y_eps_ = sweep_y_ + detail::kEpsGeom;
 
       if (ev.type == VType::Start) {
         const int cid = max_to_chain_[v];
@@ -1368,7 +1370,7 @@ private:
         while (!tmp_stack_.empty()) {
           const int w = tmp_stack_.back();
           const double c = detail::cross(pts[v], pts[u], pts[w]);
-          const bool ok = is_left_buf_[v] ? (c > detail::kEps) : (c < -detail::kEps);
+          const bool ok = is_left_buf_[v] ? (c > detail::kEpsGeom) : (c < -detail::kEpsGeom);
           if (!ok) break;
           triangles_.push_back({v, u, w});
           u = tmp_stack_.back(); tmp_stack_.pop_back();

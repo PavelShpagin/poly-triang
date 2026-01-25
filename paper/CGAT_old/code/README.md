@@ -6,6 +6,10 @@ This folder contains the **code artifact** accompanying the CGAT submission in `
 
 - `ours/`: our implementation (output-sensitive in \(k\))
 - `baselines/`: baseline implementations vendored for comparison (as used by the repository)
+  - Note: `baselines/` contains two vendored codebases (`polypartition` and `Seidel`), but the benchmark includes **three** baselines:
+    - **Garey**: `polypartition_mono_cli.cpp` (monotone decomposition triangulation, built from `baselines/polypartition`)
+    - **Seidel**: `seidel_cli.c` (built from `baselines/Seidel`)
+    - **Hertel--Mehlhorn**: `cgal_hm_cli.cpp` (CGAL `approx_convex_partition_2`, not vendored under `baselines/`)
 
 ## Build (ours)
 

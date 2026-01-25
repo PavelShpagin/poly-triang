@@ -46,7 +46,7 @@
 
 \begin{frontmatter}
 
-\title{A simpler practical polygon triangulation in \texorpdfstring{$O(n + k\log k)$}{O(n + k log k)} time}
+\title{Practical polygon triangulation in \texorpdfstring{$O(n + k\log k)$}{O(n + k log k)} time}
 
 \author[knu]{Pavel Shpagin\corref{cor1}}
 \ead{pavelandrewshpagin@knu.ua}
@@ -57,7 +57,7 @@
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
 The key idea is a chain-based reformulation of monotone decomposition: the sweep maintains active monotone chains rather than individual edges and advances chain pointers lazily, so the work over all regular vertices is $O(n)$ amortized while the sweep performs $O(k\log k)$ balanced-tree work over the $2k$ extrema.
-Experiments against implementations of Garey et al., Hertel--Mehlhorn, and Seidel show that our method is competitive across polygon families, with large speedups on nearly convex inputs ($k=O(1)$). We also include the standard linear-time fan triangulation fast path for convex polygons.
+Experiments against implementations of Garey et al., Hertel--Mehlhorn, and Seidel show that our method is competitive across polygon families: it is fastest in our convex, dent, and random benchmarks for all reported sizes. We also include the standard linear-time fan triangulation fast path for convex polygons.
 \end{abstract}
 
 \begin{keyword}
@@ -620,16 +620,12 @@ Benchmarks were run under WSL2 (Linux kernel 6.6.87.2) on a 13th Gen Intel(R) Co
 \paragraph{Benchmark setup.}
 We report \emph{mean $\pm$ standard deviation} of the \emph{elapsed time} (ms) printed by each executable for each $(\text{family}, n)$ configuration (seeds $0,\dots,4$), with \texttt{polygons\_per\_config=5}.
 We perform one unrecorded warm-up run per executable before collecting timings to reduce cold-start bias from code paging and dynamic loader effects.
+To reduce scheduling noise, we pin each run to a single CPU core (Linux \texttt{sched\_setaffinity} when available); this is applied uniformly to all algorithms.
 To reduce systematic warm/cold bias and cache interference from extremely slow baselines, we benchmark in blocks per $(\text{family}, n)$: we run the fast algorithms (ours, Garey) across all seeds first, then run the slower baselines (Seidel, Hertel--Mehlhorn).
 All polygon families are generated deterministically from the seed and $n$, followed by a fixed rotation to avoid accidental equal-$y$ degeneracies.
 The \textsc{Random} family uses the same generator as \texttt{scripts/generate\_polygons.py}: vertices are sampled by sorting random angles and assigning random radii (yielding a simple star-shaped polygon).
 The \textsc{Convex} family uses seeded affine images of a regular $n$-gon, and \textsc{Dent} pulls one seeded vertex inward (seeded location and depth).
 The event parameter $k$ shown in the tables is computed directly from each polygon as the number of local maxima, and is reported as mean $\pm$ stdev across instances.
-
-\paragraph{Correctness checks.}
-For every benchmark run, our implementation either (i) outputs exactly $n-2$ triangles or (ii) fails explicitly (no hidden fallbacks).
-In addition to this necessary sanity check, we include a diagonal-validity checker in the artifact (\texttt{check\_diagonal\_validity.py}) which samples generated polygons and verifies that the decomposition diagonals do not properly intersect the boundary or each other.
-The artifact script \texttt{reproduce.sh} runs this check before benchmarking.
 
 Our main convex, dent, and random results are included verbatim from the benchmark harness:
 

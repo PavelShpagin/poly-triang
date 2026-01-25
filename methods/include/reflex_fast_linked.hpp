@@ -94,6 +94,7 @@ private:
   
   enum VType : uint8_t { START, END, SPLIT, MERGE, REGULAR };
   std::vector<VType> types_;
+  std::vector<bool> is_left_; // For monotone triangulation side check
   
   // Edge in the sweep-line tree (matches PolyPartition's ScanLineEdge)
   struct Edge {
@@ -410,56 +411,122 @@ private:
     }
     
     // Find top vertex
-    int top = 0;
+    int top_idx = 0;
     for (int i = 1; i < m; ++i) {
-      if (verts_[face[i]].y > verts_[face[top]].y + kEps ||
-          (std::abs(verts_[face[i]].y - verts_[face[top]].y) < kEps &&
-           verts_[face[i]].x < verts_[face[top]].x)) {
-        top = i;
+      if (verts_[face[i]].y > verts_[face[top_idx]].y + kEps ||
+          (std::abs(verts_[face[i]].y - verts_[face[top_idx]].y) < kEps &&
+           verts_[face[i]].x < verts_[face[top_idx]].x)) {
+        top_idx = i;
       }
     }
-    
-    // Sort by y descending
-    std::vector<std::pair<int, int>> sorted(m);
-    for (int i = 0; i < m; ++i) {
-      sorted[i] = {i, face[i]};
+    int top = face[top_idx];
+
+    // Find bottom vertex
+    int bot_idx = 0;
+    for (int i = 1; i < m; ++i) {
+      if (verts_[face[i]].y < verts_[face[bot_idx]].y - kEps ||
+          (std::abs(verts_[face[i]].y - verts_[face[bot_idx]].y) < kEps &&
+           verts_[face[i]].x > verts_[face[bot_idx]].x)) {
+        bot_idx = i;
+      }
     }
-    std::sort(sorted.begin(), sorted.end(), [this](const auto& a, const auto& b) {
-      double ya = verts_[a.second].y, yb = verts_[b.second].y;
-      if (std::abs(ya - yb) > kEps) return ya > yb;
-      return verts_[a.second].x < verts_[b.second].x;
-    });
-    
-    int bot = sorted.back().first;
-    
-    // Assign sides
-    std::vector<int8_t> side(m);
-    for (int i = top; ; i = (i + 1) % m) {
-      side[i] = 0;
-      if (i == bot) break;
+    int bot = face[bot_idx];
+
+    // Extract two monotone chains from top to bottom
+    std::vector<int> left_chain;
+    std::vector<int> right_chain;
+    left_chain.reserve(m);
+    right_chain.reserve(m);
+
+    // Walk forward (CCW) from top to bottom
+    for (int i = top_idx; ; i = (i + 1) % m) {
+      left_chain.push_back(face[i]);
+      if (face[i] == bot) break;
     }
-    for (int i = top; ; i = (i - 1 + m) % m) {
-      side[i] = 1;
-      if (i == bot) break;
+
+    // Walk backward (CW) from top to bottom
+    for (int i = top_idx; ; i = (i - 1 + m) % m) {
+      right_chain.push_back(face[i]);
+      if (face[i] == bot) break;
     }
+
+    // Determine which chain is left vs right
+    // Compare x of the first vertex after top
+    bool chain1_is_left = true;
+    if (left_chain.size() > 1 && right_chain.size() > 1) {
+       chain1_is_left = verts_[left_chain[1]].x < verts_[right_chain[1]].x;
+    }
+
+    const auto& l_chain = chain1_is_left ? left_chain : right_chain;
+    const auto& r_chain = chain1_is_left ? right_chain : left_chain;
+
+    // Merge chains into sorted list (y descending)
+    std::vector<int> sorted;
+    sorted.reserve(m);
+    sorted.push_back(top);
+
+    size_t i = 1, j = 1;
+    while (i < l_chain.size() - 1 || j < r_chain.size() - 1) {
+      if (i >= l_chain.size() - 1) {
+        sorted.push_back(r_chain[j++]);
+      } else if (j >= r_chain.size() - 1) {
+        sorted.push_back(l_chain[i++]);
+      } else {
+        // Compare y (descending), then x (ascending)
+        double yi = verts_[l_chain[i]].y;
+        double yj = verts_[r_chain[j]].y;
+        if (std::abs(yi - yj) > kEps) {
+           if (yi > yj) sorted.push_back(l_chain[i++]);
+           else sorted.push_back(r_chain[j++]);
+        } else {
+           if (verts_[l_chain[i]].x < verts_[r_chain[j]].x) sorted.push_back(l_chain[i++]);
+           else sorted.push_back(r_chain[j++]);
+        }
+      }
+    }
+    sorted.push_back(bot);
+
+    // Assign sides for stack algorithm
+    // We can just check membership in l_chain
+    // Optimization: use a temporary marker or just check against l_chain set
+    // Since m is small, linear scan or just re-using the knowledge is fine.
+    // Actually, we can store side info in the sorted vector or parallel vector.
+    std::vector<int8_t> side_map(m, 0); // 0=right, 1=left
+    // Map vertex index back to side? No, global index is too big.
+    // Use a small map or just iterate.
+    // Better: create a set for left chain? Or just mark them in a boolean array if indices are small?
+    // Indices are 0..num_verts-1. num_verts can be large.
+    // But we are inside a class, we can use a member vector `is_left_` resized to num_verts_.
     
+    // Let's assume we add `std::vector<bool> is_left_` to the class.
+    if (is_left_.size() < static_cast<size_t>(num_verts_)) is_left_.resize(num_verts_);
+    
+    for (int v : l_chain) is_left_[v] = true;
+    for (int v : r_chain) is_left_[v] = false; // clear right chain (and bot/top overlap)
+    // top and bot are in both, doesn't matter much for side check usually, but standard algo says:
+    // "if vertices are on different chains".
+    // Top and bottom are usually treated specially or considered on one chain.
+    is_left_[top] = true; 
+    is_left_[bot] = true;
+
     // Stack-based monotone triangulation
     std::vector<int> stk;
-    stk.push_back(sorted[0].first);
-    stk.push_back(sorted[1].first);
+    stk.push_back(sorted[0]);
+    stk.push_back(sorted[1]);
     
-    for (int i = 2; i < m; ++i) {
-      int vi = sorted[i].first;
+    for (int k = 2; k < m; ++k) {
+      int vi = sorted[k];
+      int top_stack = stk.back();
       
-      if (side[vi] != side[stk.back()]) {
+      if (is_left_[vi] != is_left_[top_stack]) {
         while (stk.size() > 1) {
           int a = stk[stk.size() - 2];
           int b = stk[stk.size() - 1];
-          triangles.push_back({face[a] % n_, face[b] % n_, face[vi] % n_});
+          triangles.push_back({a % n_, b % n_, vi % n_});
           stk.pop_back();
         }
         stk.pop_back();
-        stk.push_back(sorted[i - 1].first);
+        stk.push_back(sorted[k - 1]);
         stk.push_back(vi);
       } else {
         int last = stk.back();
@@ -467,13 +534,17 @@ private:
         
         while (!stk.empty()) {
           int a = stk.back();
-          double c = (verts_[face[a]].x - verts_[face[vi]].x) *
-                     (verts_[face[last]].y - verts_[face[vi]].y) -
-                     (verts_[face[a]].y - verts_[face[vi]].y) *
-                     (verts_[face[last]].x - verts_[face[vi]].x);
-          bool ok = (side[vi] == 0) ? (c > kEps) : (c < -kEps);
+          // Check convexity
+          double c = (verts_[a].x - verts_[vi].x) *
+                     (verts_[last].y - verts_[vi].y) -
+                     (verts_[a].y - verts_[vi].y) *
+                     (verts_[last].x - verts_[vi].x);
+          
+          bool is_l = is_left_[vi];
+          bool ok = is_l ? (c > kEps) : (c < -kEps);
+          
           if (!ok) break;
-          triangles.push_back({face[a] % n_, face[last] % n_, face[vi] % n_});
+          triangles.push_back({a % n_, last % n_, vi % n_});
           last = stk.back();
           stk.pop_back();
         }

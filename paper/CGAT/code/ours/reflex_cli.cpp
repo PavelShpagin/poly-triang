@@ -1,14 +1,3 @@
-/**
- * Triangulation CLI (CGAT artifact / benchmark harness).
- *
- * Used by `paper/CGAT/tools/benchmark_cgat.py`.
- *
- * Algorithms:
- * - chain_only: chain-based sweep (no heuristics / no fallback).
- * - chain: alias of chain_only (kept for backwards compatibility).
- * - linked: edge-based sweep with a linked representation.
- */
-
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -18,11 +7,14 @@
 #include <exception>
 #include <cmath>
 #include <algorithm>
-#include <time.h>
-#include <iomanip>
+#include <array>
 
 #include "reflex_fast_linked.hpp"
 #include "reflex_chain_triangulate.hpp"
+
+extern "C" {
+#include "seidel.h"
+}
 
 // k = number of local maxima (equivalently, local minima) w.r.t. the sweep direction.
 // This is the event-complexity parameter used in the paper (O(n + k log k)).
@@ -51,12 +43,13 @@ static int count_local_maxima_k(const std::vector<std::pair<double, double>>& co
 }
 
 void print_usage(const char* prog) {
-    std::cerr << "Usage: " << prog << " --input <polygon.poly> --output <output.tri> [--algo chain|chain_only|linked]\n";
+    std::cerr << "Usage: " << prog << " --input <polygon.poly> --output <output.tri> [--algo chain|linked|seidel]\n";
 }
 
 int main(int argc, char* argv[]) {
     std::string input_file, output_file;
-    std::string algo = "chain_only"; // core method (no heuristics / no fallback)
+    // Default is the paper's main method (no automatic fallback).
+    std::string algo = "chain";
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--input") == 0 || strcmp(argv[i], "-i") == 0) {
@@ -99,23 +92,18 @@ int main(int argc, char* argv[]) {
         }
 
         fast_linked::Triangulator triangulator;
-        auto cpu_now_ms = []() -> double {
-            struct timespec ts;
-            clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
-            return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
-        };
-        const double t0 = cpu_now_ms();
+        auto start = std::chrono::high_resolution_clock::now();
         try {
             triangulator.triangulate(polygon);
         } catch (const std::exception& e) {
             std::cerr << "Error: " << e.what() << "\n";
             return 2;
         }
-        const double t1 = cpu_now_ms();
+        auto end = std::chrono::high_resolution_clock::now();
 
         const auto& triangles = triangulator.triangles;
         const int num_reflex = triangulator.reflex_count;
-        double elapsed_ms = (t1 - t0);
+        double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
         // Write output
         std::ofstream fout(output_file);
@@ -123,8 +111,6 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: Cannot open output file: " << output_file << "\n";
             return 1;
         }
-        fout.setf(std::ios::fixed);
-        fout << std::setprecision(17);
         fout << "# vertices\n";
         fout << n << "\n";
         for (int i = 0; i < n; i++) {
@@ -146,7 +132,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (algo == "chain" || algo == "chain_only") {
+    if (algo == "chain") {
         std::vector<reflex_tri::Point> polygon(n);
         for (int i = 0; i < n; i++) {
             polygon[i].x = coords[i].first;
@@ -156,23 +142,18 @@ int main(int argc, char* argv[]) {
 
         reflex_tri::Triangulator triangulator;
 
-        auto cpu_now_ms = []() -> double {
-            struct timespec ts;
-            clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
-            return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
-        };
-        const double t0 = cpu_now_ms();
+        auto start = std::chrono::high_resolution_clock::now();
         try {
             triangulator.triangulate(polygon);
         } catch (const std::exception& e) {
             std::cerr << "Error: " << e.what() << "\n";
             return 2;
         }
-        const double t1 = cpu_now_ms();
+        auto end = std::chrono::high_resolution_clock::now();
 
         const auto& triangles = triangulator.debug_triangles();
         const int num_reflex = triangulator.reflex_count();
-        double elapsed_ms = (t1 - t0);
+        double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
         // NOTE: chain triangulator may reverse vertices internally to ensure CCW;
         // we therefore write the (possibly reordered) vertices we triangulated.
@@ -181,8 +162,6 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: Cannot open output file: " << output_file << "\n";
             return 1;
         }
-        fout.setf(std::ios::fixed);
-        fout << std::setprecision(17);
         fout << "# vertices\n";
         fout << n << "\n";
         for (int i = 0; i < n; i++) {
@@ -195,7 +174,7 @@ int main(int argc, char* argv[]) {
         }
         fout.close();
 
-        std::cout << "reflex,mode=chain_only,vertices=" << n
+        std::cout << "reflex,mode=chain,vertices=" << n
                   << ",triangles=" << triangles.size()
                   << ",expected=" << (n - 2)
                   << ",reflex_count=" << num_reflex
@@ -204,6 +183,55 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    std::cerr << "Error: unknown --algo '" << algo << "' (expected 'chain_only', 'chain', or 'linked')\n";
+    if (algo == "seidel") {
+        if (n > SEGSIZE) {
+             std::cerr << "Error: n=" << n << " exceeds SEGSIZE=" << SEGSIZE << "\n";
+             return 1;
+        }
+        
+        std::vector<int> cntr = {n};
+        // Use vector of arrays to ensure contiguous memory layout compatible with double(*)[2]
+        std::vector<std::array<double, 2>> vertices(n);
+        for(int i=0; i<n; ++i) {
+            vertices[i][0] = coords[i].first;
+            vertices[i][1] = coords[i].second;
+        }
+        
+        std::vector<std::array<int, 3>> triangles(n); // Allocate enough space
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        int n_tris = triangulate_polygon(1, cntr.data(), reinterpret_cast<double(*)[2]>(vertices.data()), reinterpret_cast<int(*)[3]>(triangles.data()));
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+        // Write output
+        std::ofstream fout(output_file);
+        if (!fout) {
+            std::cerr << "Error: Cannot open output file: " << output_file << "\n";
+            return 1;
+        }
+        fout << "# vertices\n";
+        fout << n << "\n";
+        for (int i = 0; i < n; i++) {
+            fout << vertices[i][0] << " " << vertices[i][1] << "\n";
+        }
+        fout << "# triangles\n";
+        fout << n_tris << "\n";
+        for (int i = 0; i < n_tris; i++) {
+            fout << triangles[i][0] << " " << triangles[i][1] << " " << triangles[i][2] << "\n";
+        }
+        fout.close();
+
+        std::cout << "reflex,mode=seidel,vertices=" << n
+                  << ",triangles=" << n_tris
+                  << ",expected=" << (n - 2)
+                  << ",reflex_count=" << -1 
+                  << ",k_count=" << k_count
+                  << ",time_ms=" << elapsed_ms << "\n";
+        return 0;
+    }
+
+    std::cerr << "Error: unknown --algo '" << algo << "' (expected 'chain', 'linked', or 'seidel')\n";
     return 1;
 }

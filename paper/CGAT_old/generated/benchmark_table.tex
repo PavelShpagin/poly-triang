@@ -1,0 +1,29 @@
+\begin{table*}[t]
+\centering
+\caption{Running time (ms) on convex, dent, and random polygons (mean $\pm$ stdev over instances).}
+\label{tab:benchmark}
+\small
+\begin{tabular}{llrrrrr}
+\toprule
+Type & $n$ & $k$ & \textbf{Ours} & Seidel & Garey & Hertel--Mehlhorn \\
+\midrule
+Convex & 500 & 1 $\pm$ 0 & \textbf{0.01 $\pm$ 0.00} & 7.22 $\pm$ 0.67 & 0.12 $\pm$ 0.02 & 0.74 $\pm$ 0.12 \\
+ & 1,000 & 1 $\pm$ 0 & \textbf{0.01 $\pm$ 0.00} & 7.29 $\pm$ 0.44 & 0.24 $\pm$ 0.02 & 2.83 $\pm$ 1.17 \\
+ & 2,000 & 1 $\pm$ 0 & \textbf{0.02 $\pm$ 0.00} & 7.40 $\pm$ 0.54 & 0.46 $\pm$ 0.02 & 7.58 $\pm$ 0.35 \\
+ & 5,000 & 1 $\pm$ 0 & \textbf{0.05 $\pm$ 0.00} & 8.30 $\pm$ 0.41 & 1.16 $\pm$ 0.15 & 51.94 $\pm$ 10.87 \\
+ & 10,000 & 1 $\pm$ 0 & \textbf{0.12 $\pm$ 0.00} & 11.49 $\pm$ 0.82 & 2.95 $\pm$ 0.30 & 202.49 $\pm$ 50.65 \\
+\midrule
+Dent & 500 & 2 $\pm$ 0 & 1.52 $\pm$ 0.30 & 7.08 $\pm$ 0.26 & \textbf{0.12 $\pm$ 0.02} & 0.71 $\pm$ 0.13 \\
+ & 1,000 & 2 $\pm$ 0 & 5.83 $\pm$ 0.71 & 7.97 $\pm$ 0.76 & \textbf{0.28 $\pm$ 0.08} & 2.14 $\pm$ 0.24 \\
+ & 2,000 & 2 $\pm$ 0 & 160.04 $\pm$ 304.44 & 8.98 $\pm$ 0.65 & \textbf{0.57 $\pm$ 0.05} & 6.96 $\pm$ 0.44 \\
+ & 5,000 & 2 $\pm$ 0 & 134.53 $\pm$ 21.47 & 8.59 $\pm$ 0.52 & \textbf{1.38 $\pm$ 0.26} & 30.25 $\pm$ 2.67 \\
+ & 10,000 & 2 $\pm$ 0 & 476.46 $\pm$ 66.20 & 10.38 $\pm$ 0.85 & \textbf{2.99 $\pm$ 0.70} & 154.65 $\pm$ 41.35 \\
+\midrule
+Random & 500 & 160 $\pm$ 2 & 2.32 $\pm$ 0.38 & 5.80 $\pm$ 0.13 & \textbf{0.20 $\pm$ 0.04} & 1.58 $\pm$ 0.10 \\
+ & 1,000 & 329 $\pm$ 4 & 8.43 $\pm$ 1.00 & 6.35 $\pm$ 0.48 & \textbf{0.38 $\pm$ 0.02} & 4.42 $\pm$ 0.93 \\
+ & 2,000 & 666 $\pm$ 9 & 29.70 $\pm$ 2.37 & 6.96 $\pm$ 0.13 & \textbf{0.85 $\pm$ 0.16} & 11.49 $\pm$ 1.06 \\
+ & 5,000 & 1661 $\pm$ 17 & 177.77 $\pm$ 18.72 & 10.07 $\pm$ 0.57 & \textbf{2.19 $\pm$ 0.04} & 65.65 $\pm$ 3.36 \\
+ & 10,000 & 3316 $\pm$ 12 & 706.25 $\pm$ 32.43 & 15.36 $\pm$ 0.95 & \textbf{4.76 $\pm$ 0.59} & 263.91 $\pm$ 16.29 \\
+\bottomrule
+\end{tabular}
+\end{table*}

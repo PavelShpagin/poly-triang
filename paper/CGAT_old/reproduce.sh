@@ -11,39 +11,45 @@ chmod +x "${CGAT_DIR}/build.sh" "${CGAT_DIR}/tools/"*.py
 "${CGAT_DIR}/build.sh"
 
 echo "[2/5] Sanity-check correctness (no crossings on sampled diagonals)..."
-python3 "${CGAT_DIR}/check_diagonal_validity.py" --n 500 --seed 0
-python3 "${CGAT_DIR}/check_diagonal_validity.py" --n 500 --seed 1
+python3 "${CGAT_DIR}/tools/check_diagonal_validity.py" --n 500 --seed 0
+python3 "${CGAT_DIR}/tools/check_diagonal_validity.py" --n 500 --seed 1
 
-echo "[2b/5] Visual sanity-check: render + validate triangulations..."
+echo "[2b/5] Visual sanity-check: render triangulation SVGs (ours) ..."
 FIG_DIR="${OUTDIR}/figures"
-VIZ_N="${CGAT_VIZ_N:-200}"
-VIZ_SEED="${CGAT_VIZ_SEED:-0}"
-
-# Phase 3 (full triangulation) + validator (strong end-to-end correctness signal).
+# Always render + validate full Phase-3 triangulations for the small visualization instances.
+# (Fast: n≈200. This is our strongest end-to-end correctness signal for reviewers.)
 python3 "${CGAT_DIR}/tools/visualize_triangulation.py" \
   --bin "${CGAT_DIR}/bin/reflex_cli" \
   --mode triangulation \
   --outdir "${FIG_DIR}" \
-  --n "${VIZ_N}" \
-  --seed "${VIZ_SEED}"
+  --n "${CGAT_VIZ_N:-200}" \
+  --seed "${CGAT_VIZ_SEED:-0}"
 python3 "${CGAT_DIR}/tools/validate_tri.py" --tri "${FIG_DIR}/triangulation_convex.tri"
 python3 "${CGAT_DIR}/tools/validate_tri.py" --tri "${FIG_DIR}/triangulation_dent.tri"
 python3 "${CGAT_DIR}/tools/validate_tri.py" --tri "${FIG_DIR}/triangulation_random.tri"
 
-# Phase 2 (decomposition diagonals) for paper figures / debugging.
+# Also render decomposition diagonals (Phase 2) for debugging / paper figures.
 python3 "${CGAT_DIR}/tools/visualize_triangulation.py" \
   --mode decomposition \
   --diag-debug "${CGAT_DIR}/bin/diag_debug_cli" \
   --outdir "${FIG_DIR}" \
-  --n "${VIZ_N}" \
-  --seed "${VIZ_SEED}"
+  --n "${CGAT_VIZ_N:-200}" \
+  --seed "${CGAT_VIZ_SEED:-0}"
 
 echo "[3/5] Run benchmarks (paper sizes)..."
-TYPES="${CGAT_TYPES:-convex,dent,random,star}"
+TYPES="${CGAT_TYPES:-convex,dent,random}"
 SIZES="${CGAT_SIZES:-500,1000,2000,5000,10000}"
 RUNS="${CGAT_RUNS:-5}"
 TIMEOUT="${CGAT_TIMEOUT:-10}"
 PIN_CPU="${CGAT_PIN_CPU:-0}"
+
+echo "  types:   ${TYPES}"
+echo "  sizes:   ${SIZES}"
+echo "  runs:    ${RUNS}"
+echo "  timeout: ${TIMEOUT}s"
+echo "  pin-cpu: ${PIN_CPU}"
+echo "  outdir:  ${OUTDIR}"
+echo "  pdf:     $([ "${SKIP_PDF}" = "1" ] && echo "skip" || echo "build")"
 
 python3 "${CGAT_DIR}/tools/benchmark_cgat.py" \
   --types "${TYPES}" \
@@ -77,8 +83,6 @@ fi
 echo "Done:"
 echo "  - ${OUTDIR}/benchmark_table.tex"
 echo "  - ${OUTDIR}/benchmark_full.tex"
-echo "  - ${FIG_DIR}/triangulation_*.svg"
-echo "  - ${FIG_DIR}/triangulation_*.tri"
 if [ "${SKIP_PDF}" != "1" ]; then
   echo "  - ${CGAT_DIR}/submission.pdf"
 fi

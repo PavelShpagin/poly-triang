@@ -225,9 +225,7 @@ def write_svg(
 
 def run_cli(exe: Path, poly_path: Path, tri_path: Path) -> None:
     proc = subprocess.run(
-        # The published CGAT submission uses the chain-based algorithm as the default.
-        # Historically this was called "chain_only"; the CLI now exposes it as "chain".
-        [str(exe), "--input", str(poly_path), "--output", str(tri_path), "--algo", "chain"],
+        [str(exe), "--input", str(poly_path), "--output", str(tri_path), "--algo", "chain_only"],
         capture_output=True,
         text=True,
     )
@@ -328,10 +326,7 @@ def main() -> None:
         pts = gen(args.n, args.seed)
         poly_path = args.outdir / f"polygon_{name}.poly"
         write_poly(pts, poly_path)
-        
-        # Use different SVG filenames for different modes to avoid overwriting.
-        mode_prefix = "decomposition" if args.mode == "decomposition" else "triangulation"
-        out_svg = args.outdir / f"{mode_prefix}_{name}.svg"
+        out_svg = args.outdir / f"triangulation_{name}.svg"
 
         # Render either decomposition diagonals (Phase 2) or triangulation diagonals (Phase 3).
         title = f"{name} (n={args.n}, seed={args.seed})"
