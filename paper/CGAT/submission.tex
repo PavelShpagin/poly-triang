@@ -55,7 +55,7 @@
 \address[knu]{Faculty of Computer Science and Cybernetics, Taras Shevchenko National University of Kyiv, Kyiv, Ukraine}
 
 \begin{abstract}
-We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema with respect to the sweep direction.
+We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local maxima (equivalently, local minima) with respect to the sweep direction.
 The key idea is a chain-based reformulation of the monotone-decomposition sweep: the sweep maintains active monotone chains rather than individual edges and advances chain pointers lazily, so all regular vertices cost $O(n)$ total while balanced-tree work is confined to $O(k\log k)$ over the $2k$ extrema.
 We evaluate against state-of-the-art practical triangulation pipelines with publicly available implementations, including Garey et al., Seidel, and Hertel--Mehlhorn, and find that our method is faster across all tested families, with large speedups on nearly convex inputs.
 \end{abstract}
@@ -73,21 +73,21 @@ simple polygon \sep triangulation \sep monotone decomposition \sep input-sensiti
 
 Triangulating simple polygons is a fundamental problem in computational geometry. Chazelle~\cite{chazelle1991} proved that $O(n)$ time is achievable, but the algorithm's complexity has limited practical adoption. The plane sweep of Garey et al.~\cite{garey1978}, running in $O(n\log n)$ time via monotone decomposition, remains standard; see de Berg et al.~\cite{deberg2008}. Seidel~\cite{seidel1991} gave a simplified randomized $O(n\log^* n)$ expected-time algorithm.
 
-We present an algorithm running in $O(n + k\log k)$ time, where $k$ is the number of local extrema with respect to the sweep direction. This interpolates between $O(n)$ for convex polygons ($k = 1$) and $O(n\log n)$ for worst-case polygons ($k = \Theta(n)$), and can improve upon classical methods when $k$ is substantially smaller than $n$.
+We present an algorithm running in $O(n + k\log k)$ time, where $k$ is the number of local maxima (equivalently, local minima) with respect to the sweep direction. This interpolates between $O(n)$ for convex polygons ($k = 1$) and $O(n\log n)$ for worst-case polygons ($k = \Theta(n)$), and can improve upon classical methods when $k$ is substantially smaller than $n$.
 We show in \Cref{sec:complexity} that \(k \le r + 1\), where \(r\) is the number of reflex vertices, so the bound also implies \(O(n + r\log r)\).
 
-The key observation is that the sweep needs to process only local extrema, and regular vertices can be handled implicitly by advancing chain pointers lazily. This yields $O(k)$ sweep events and $O(n)$ total pointer advancement, with balanced-tree operations totaling $O(k\log k)$.
+The key observation is that the sweep needs to process only local extrema, and regular vertices can be handled implicitly by advancing chain pointers lazily. This yields $2k$ sweep events and $O(n)$ total pointer advancement, with balanced-tree operations totaling $O(k\log k)$.
 
 Beyond the improved bound, the method is deliberately simple: it follows the classical monotone-decomposition sweep with the same event order and tie-breaking, but represents the status structure by monotone chains and advances along chains lazily. In \Cref{sec:experiments}, our implementation is faster than the standard Garey et al.\ pipeline across all tested polygon families and sizes, suggesting a new practical baseline for polygon triangulation. For clarity, we assume general position in the analysis; the implementation resolves equal $y$-coordinates by a deterministic lexicographic tie-break.
 
 \paragraph{Related work}
 The ear-clipping method is among the oldest practical triangulation algorithms; for smaller inputs, its $O(n^2)$ complexity~\cite{elgindy1985} is still attractive due to its simplicity. The classical plane sweep of Garey et al.~\cite{garey1978} decomposes a polygon into $y$-monotone pieces and triangulates each in linear time, achieving $O(n\log n)$ overall; see de~Berg et al.~\cite{deberg2008}. Triangulation of monotone polygons, the linear-time subroutine underlying this pipeline, goes back at least to Fournier and Montuno~\cite{fournier1984}.
 
-Several works relate running time to geometric properties of the input. Hertel and Mehlhorn~\cite{hertel1983} gave a sweep whose cost depends on the number of start vertices $s$ and runs in $O(n + s\log s)$; for simple polygons, $s \le r+1$. Chazelle and Incerpi~\cite{chazelle1984} study triangulation under shape-complexity measures. Toussaint~\cite{toussaint1990,toussaint1991} gives output-sensitive triangulation algorithms. Our parameter $k$ counts local extrema in the sweep direction; \Cref{sec:complexity} shows \(k \le r+1\) and it can be strictly smaller than \(r\) when many reflex vertices are regular.
+Several works relate running time to geometric properties of the input. Hertel and Mehlhorn~\cite{hertel1983} gave a sweep whose cost depends on the number of start vertices $s$ and runs in $O(n + s\log s)$; for simple polygons, $s \le r+1$. Chazelle and Incerpi~\cite{chazelle1984} study triangulation under shape-complexity measures. Toussaint~\cite{toussaint1990,toussaint1991} gives output-sensitive triangulation algorithms. Our parameter $k$ counts local maxima in the sweep direction; \Cref{sec:complexity} shows \(k \le r+1\) and it can be strictly smaller than \(r\) when many reflex vertices are regular.
 
 Worst-case bounds in $n$ have also been improved. Tarjan and Van~Wyk~\cite{tarjan1988} achieved $O(n\log\log n)$ using sophisticated data structures, later simplified by Kirkpatrick et al.~\cite{kirkpatrick1992}. Randomized incremental approaches proved fruitful: Clarkson et al.~\cite{clarkson1989} gave an $O(n\log^* n)$ expected-time Las Vegas algorithm, which Seidel~\cite{seidel1991} simplified significantly via trapezoidal decomposition. The breakthrough came with Chazelle's~\cite{chazelle1991} deterministic $O(n)$ algorithm, but its complexity has limited practical adoption; Amato et al.~\cite{amato2001} provided further simplifications to the randomized approach. Keil~\cite{keil2000} surveys polygon decomposition more broadly.
 
-Since both monotone decomposition and the extrema count $k$ depend on the sweep direction, the choice of direction matters; Shin and Kim~\cite{shin2004} study selecting directions that optimize monotone-chain decompositions.
+Since both monotone decomposition and the maxima count $k$ depend on the sweep direction, the choice of direction matters; Shin and Kim~\cite{shin2004} study selecting directions that optimize monotone-chain decompositions.
 
 Our contribution is a deterministic chain-based reformulation of monotone decomposition that makes an extrema parameter \(k\) explicit in both the analysis and the implementation: the sweep performs balanced-tree work only at the \(2k\) extremal events, while all regular vertices are handled via amortized pointer advancement along chains.
 For correctness, we prove equivalence to the classical helper-based monotone-decomposition sweep (see, e.g., de Berg et al.~\cite{deberg2008}): under the same event order and tie-breaking, our chain-based sweep produces the same decomposition diagonals.
@@ -121,7 +121,7 @@ Start and split vertices are \emph{local maxima}; end and merge vertices are \em
 A \emph{$y$-monotone chain} is a maximal contiguous sequence of boundary vertices whose $y$-coordinates are strictly monotonic (strictly increasing or strictly decreasing) along the chain. Each chain connects a local maximum to a local minimum.
 \end{definition}
 
-The boundary $\partial P$ decomposes uniquely into monotone chains, with consecutive chains sharing their endpoint extrema. Let $k$ denote the number of local extrema (maxima or, equivalently, minima) with respect to the sweep direction; then there are $2k$ chains, and $k$ controls the number of sweep events in our formulation.
+The boundary $\partial P$ decomposes uniquely into monotone chains, with consecutive chains sharing their endpoint extrema. Let $k$ denote the number of local maxima (equivalently, local minima) with respect to the sweep direction; then there are $2k$ chains, and $k$ controls the number of sweep events in our formulation.
 
 \begin{definition}[Left-boundary chain]
 \label{def:left-boundary}
@@ -178,7 +178,7 @@ In \Cref{alg:decompose}, before inspecting a chain's fields at event vertex $v$ 
 After advancement, the $x$-coordinate of $C$ at height $y$ is computed by linear interpolation along $C.\mathit{curr}$. Since each vertex is visited by at most one chain's pointer exactly once, the total cost of all pointer advancements (and any diagonals emitted inside \textsc{Advance}) is $O(n)$, amortized over all tree operations.
 
 \paragraph{Event processing}
-The sweep processes local extrema in decreasing $y$-order. Let $E$ denote the sorted list of extrema; $|E| = 2k$, where $k$ is the number of local extrema.
+The sweep processes local extrema in decreasing $y$-order. Let $E$ denote the sorted list of extrema; $|E| = 2k$, where $k$ is the number of local maxima (equivalently, local minima).
 
 \begin{algorithm}[H]
 \caption{Chain-Based Monotone Decomposition}
@@ -486,7 +486,7 @@ Hence $|D| \leq s + m \leq r$ since every split and merge vertex is reflex.
 
 \begin{theorem}[Complexity]
 \label{thm:complexity}
-A simple polygon with $n$ vertices and $k$ local extrema can be triangulated in $O(n + k\log k)$ time and $O(n)$ space.
+A simple polygon with $n$ vertices and $k$ local maxima (equivalently, $k$ local minima) can be triangulated in $O(n + k\log k)$ time and $O(n)$ space.
 \end{theorem}
 
 \begin{proof}
@@ -515,7 +515,7 @@ s = m + 1
 \qquad\text{and}\qquad
 e = t + 1.
 \]
-Consequently, the number of local maxima is \(k = s + t = t + m + 1\), and hence \(k \le r + 1\) since split and merge vertices are reflex and \(t+m \le r\).
+Consequently, the number of local maxima is \(s + t = t + m + 1\), which equals the number of local minima \(e + m\). Thus, setting \(k\) to either count gives \(k \le r + 1\) since split and merge vertices are reflex and \(t+m \le r\).
 \end{lemma}
 
 \begin{proof}
@@ -554,7 +554,7 @@ Benchmarks were run under WSL2 (Linux kernel 6.6.87.2) on a 13th Gen Intel(R) Co
 
 \paragraph{Benchmark setup}
 For each polygon family and size $n$, we generate five instances (seeds $0,\dots,4$) and report \emph{mean $\pm$ standard deviation} of wall-clock time (ms).
-The table also reports $k$, the number of local extrema in the sweep direction, computed per instance and aggregated in the same way.
+The table also reports $k$, the number of local maxima in the sweep direction, computed per instance and aggregated in the same way.
 We use three families: \textsc{Convex} (affine images of a regular $n$-gon), \textsc{Dent} (one inward perturbation), and \textsc{Random} (star-shaped polygons from random angles and radii).
 
 \paragraph{Correctness checks}
@@ -595,10 +595,10 @@ Chazelle~\cite{chazelle1991} & $O(n)$ & impractical \\
 \end{tabular}
 \end{table}
 
-Our algorithm achieves the extrema-sensitive bound $O(n + k \log k)$, where $k$ is the number of local extrema with respect to the sweep direction. The sweep processes $O(k)$ events with $O(\log k)$ balanced-tree operations each, while lazy pointer advancement handles all $n$ vertices in $O(n)$ amortized time. This interpolates between $O(n)$ on nearly monotone inputs and $O(n \log n)$ in the worst case. The implementation uses cache-friendly monotone chain representation for efficient constant factors.
+Our algorithm achieves the extrema-sensitive bound $O(n + k \log k)$, where $k$ is the number of local maxima (equivalently, local minima) with respect to the sweep direction. The sweep processes $O(k)$ events with $O(\log k)$ balanced-tree operations each, while lazy pointer advancement handles all $n$ vertices in $O(n)$ amortized time. This interpolates between $O(n)$ on nearly monotone inputs and $O(n \log n)$ in the worst case. The implementation uses cache-friendly monotone chain representation for efficient constant factors.
 
 \paragraph{Extensions}
-The algorithm extends naturally to polygons with holes: each hole boundary contributes its own set of chains and extrema, and the sorted extrema lists are merged. The analysis carries through with $k$ now denoting the total number of local extrema across all boundaries. See also Tereschenko and Tereschenko~\cite{tereschenko2017} for triangulating regions between polygonal boundaries.
+The algorithm extends naturally to polygons with holes: each hole boundary contributes its own set of chains and extrema, and the sorted extrema lists are merged. The analysis carries through with $k$ now denoting the total number of local maxima across all boundaries. See also Tereschenko and Tereschenko~\cite{tereschenko2017} for triangulating regions between polygonal boundaries.
 
 \paragraph{Implementation}
 For $k$ close to $n$, a simpler edge-based sweep may have better constants. Reducing constants in this high-event regime without sacrificing the $k$-sensitive structure remains an open practical challenge.
