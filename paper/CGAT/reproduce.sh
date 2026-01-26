@@ -11,8 +11,8 @@ chmod +x "${CGAT_DIR}/build.sh" "${CGAT_DIR}/tools/"*.py
 "${CGAT_DIR}/build.sh"
 
 echo "[2/5] Sanity-check correctness (no crossings on sampled diagonals)..."
-python3 "${CGAT_DIR}/check_diagonal_validity.py" --n 500 --seed 0
-python3 "${CGAT_DIR}/check_diagonal_validity.py" --n 500 --seed 1
+python3 "${CGAT_DIR}/tools/check_diagonal_validity.py" --n 500 --seed 0
+python3 "${CGAT_DIR}/tools/check_diagonal_validity.py" --n 500 --seed 1
 
 echo "[2b/5] Visual sanity-check: render + validate triangulations..."
 FIG_DIR="${OUTDIR}/figures"

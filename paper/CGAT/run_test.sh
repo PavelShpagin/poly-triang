@@ -22,8 +22,13 @@ with open("/tmp/test.poly", "w") as f:
 print("Generated /tmp/test.poly")
 EOF
 
-echo "Running chain_optimal_cli..."
-./code/ours/chain_optimal_cli --input /tmp/test.poly --output /tmp/test.tri
+if [ ! -x ./bin/reflex_cli ]; then
+  echo "Building binaries (missing ./bin/reflex_cli)..."
+  ./build.sh
+fi
+
+echo "Running reflex_cli (chain)..."
+./bin/reflex_cli --input /tmp/test.poly --output /tmp/test.tri --algo chain
 echo "Exit code: $?"
 
 echo ""

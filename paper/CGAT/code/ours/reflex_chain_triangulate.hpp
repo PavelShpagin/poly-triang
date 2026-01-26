@@ -18,12 +18,26 @@
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <stdexcept>
 #include <ostream>
 #include <sstream>
 #include <vector>
+
+// Optional boundary-crossing validation for proposed diagonals.
+//
+// When enabled, we reject diagonals that intersect the polygon boundary (excluding
+// incident edges). This is a defensive guard for near-degenerate inputs.
+//
+// NOTE: This is off by default for performance; it can dominate runtime on high-k
+// polygons.
+//
+// Build-time toggle:
+// - 0 (default): disabled (fast)
+// - 1: enabled (defensive)
+#ifndef REFLEX_ENABLE_DIAGONAL_CROSS_CHECK
+#define REFLEX_ENABLE_DIAGONAL_CROSS_CHECK 0
+#endif
 
 namespace reflex_tri {
 
@@ -198,6 +212,11 @@ public:
 #ifdef REFLEX_TRI_TIMING
     using clock = std::chrono::high_resolution_clock;
     const auto t0 = clock::now();
+#endif
+
+    // Build a spatial index over boundary edges for diagonal validation.
+#if REFLEX_ENABLE_DIAGONAL_CROSS_CHECK
+    build_boundary_bvh(pts);
 #endif
 
     build_vertex_types_and_chains(pts);
@@ -427,7 +446,26 @@ private:
   int dbg_total_walks_ = 0;
   
   // Temporary reference to pts for diagonal validation in add_diagonal_unique.
-  std::vector<Point> add_diag_pts_;
+  // Kept as a pointer to avoid O(n) copies.
+  const std::vector<Point>* diag_check_pts_ = nullptr;
+
+  // Boundary-edge BVH for fast "diagonal crosses boundary?" queries.
+  struct Aabb {
+    double minx = 0.0;
+    double miny = 0.0;
+    double maxx = 0.0;
+    double maxy = 0.0;
+  };
+  struct BvhNode {
+    Aabb box;
+    int left = -1;
+    int right = -1;
+    int start = 0;  // index into boundary_edge_ids_
+    int count = 0;  // leaf size; 0 for internal nodes
+  };
+  std::vector<int> boundary_edge_ids_;   // edge id e corresponds to boundary edge (e, (e+1)%n)
+  std::vector<BvhNode> boundary_bvh_;
+  int boundary_bvh_root_ = -1;
   long long dbg_sum_face_verts_ = 0;
   std::size_t dbg_half_edges_ = 0;
   std::size_t dbg_used_half_edges_ = 0;
@@ -440,7 +478,6 @@ private:
   std::vector<int> tmp_chain2_;
   std::vector<int> tmp_sorted_;
   std::vector<int> tmp_stack_;
-  std::unordered_set<long long> face_edge_set_;
   std::vector<int> ear_clip_list_;
 
   // --- Treap utilities ---
@@ -477,62 +514,186 @@ private:
            static_cast<std::uint32_t>(b);
   }
 
-  // Check if segment (u,v) crosses any boundary edge strictly between u and v.
+  static Aabb aabb_from_points(const Point& a, const Point& b) {
+    Aabb bb;
+    bb.minx = std::min(a.x, b.x);
+    bb.maxx = std::max(a.x, b.x);
+    bb.miny = std::min(a.y, b.y);
+    bb.maxy = std::max(a.y, b.y);
+    return bb;
+  }
+
+  static bool aabb_overlaps(const Aabb& a, const Aabb& b) {
+    if (a.maxx < b.minx || b.maxx < a.minx) return false;
+    if (a.maxy < b.miny || b.maxy < a.miny) return false;
+    return true;
+  }
+
+  static bool segment_intersects_aabb(const Point& p0, const Point& p1, const Aabb& box) {
+    // Slab test on [0,1] segment parameter.
+    double t0 = 0.0;
+    double t1 = 1.0;
+
+    const double dx = p1.x - p0.x;
+    if (std::abs(dx) < detail::kEpsMath) {
+      if (p0.x < box.minx || p0.x > box.maxx) return false;
+    } else {
+      const double inv = 1.0 / dx;
+      double ta = (box.minx - p0.x) * inv;
+      double tb = (box.maxx - p0.x) * inv;
+      if (ta > tb) std::swap(ta, tb);
+      t0 = std::max(t0, ta);
+      t1 = std::min(t1, tb);
+      if (t0 > t1) return false;
+    }
+
+    const double dy = p1.y - p0.y;
+    if (std::abs(dy) < detail::kEpsMath) {
+      if (p0.y < box.miny || p0.y > box.maxy) return false;
+    } else {
+      const double inv = 1.0 / dy;
+      double ta = (box.miny - p0.y) * inv;
+      double tb = (box.maxy - p0.y) * inv;
+      if (ta > tb) std::swap(ta, tb);
+      t0 = std::max(t0, ta);
+      t1 = std::min(t1, tb);
+      if (t0 > t1) return false;
+    }
+
+    return true;
+  }
+
+  Aabb edge_aabb(const std::vector<Point>& pts, int e) const {
+    const int n = static_cast<int>(pts.size());
+    const int a = e;
+    const int b = (e + 1 == n) ? 0 : (e + 1);
+    return aabb_from_points(pts[a], pts[b]);
+  }
+
+  double edge_mid_coord(const std::vector<Point>& pts, int e, int axis) const {
+    const int n = static_cast<int>(pts.size());
+    const int a = e;
+    const int b = (e + 1 == n) ? 0 : (e + 1);
+    if (axis == 0) return 0.5 * (pts[a].x + pts[b].x);
+    return 0.5 * (pts[a].y + pts[b].y);
+  }
+
+  static Aabb aabb_union(const Aabb& a, const Aabb& b) {
+    Aabb out;
+    out.minx = std::min(a.minx, b.minx);
+    out.miny = std::min(a.miny, b.miny);
+    out.maxx = std::max(a.maxx, b.maxx);
+    out.maxy = std::max(a.maxy, b.maxy);
+    return out;
+  }
+
+  int build_boundary_bvh_rec(const std::vector<Point>& pts, int start, int end) {
+    const int node_idx = static_cast<int>(boundary_bvh_.size());
+    boundary_bvh_.push_back(BvhNode{});
+
+    // Compute node bbox.
+    Aabb bb;
+    bool bb_init = false;
+    for (int i = start; i < end; ++i) {
+      const Aabb ebox = edge_aabb(pts, boundary_edge_ids_[i]);
+      if (!bb_init) {
+        bb = ebox;
+        bb_init = true;
+      } else {
+        bb = aabb_union(bb, ebox);
+      }
+    }
+    boundary_bvh_[node_idx].box = bb;
+
+    const int count = end - start;
+    static constexpr int kLeafSize = 16;
+    if (count <= kLeafSize) {
+      boundary_bvh_[node_idx].start = start;
+      boundary_bvh_[node_idx].count = count;
+      return node_idx;
+    }
+
+    // Split by the widest axis.
+    const double dx = bb.maxx - bb.minx;
+    const double dy = bb.maxy - bb.miny;
+    const int axis = (dx >= dy) ? 0 : 1;
+    const int mid = start + count / 2;
+
+    auto it0 = boundary_edge_ids_.begin() + start;
+    auto itM = boundary_edge_ids_.begin() + mid;
+    auto it1 = boundary_edge_ids_.begin() + end;
+    std::nth_element(it0, itM, it1, [&](int ea, int eb) {
+      const double ca = edge_mid_coord(pts, ea, axis);
+      const double cb = edge_mid_coord(pts, eb, axis);
+      if (ca < cb) return true;
+      if (cb < ca) return false;
+      return ea < eb;
+    });
+
+    const int left = build_boundary_bvh_rec(pts, start, mid);
+    const int right = build_boundary_bvh_rec(pts, mid, end);
+    boundary_bvh_[node_idx].left = left;
+    boundary_bvh_[node_idx].right = right;
+    boundary_bvh_[node_idx].count = 0;
+    return node_idx;
+  }
+
+  void build_boundary_bvh(const std::vector<Point>& pts) {
+#if REFLEX_ENABLE_DIAGONAL_CROSS_CHECK
+    const int n = static_cast<int>(pts.size());
+    boundary_edge_ids_.resize(n);
+    for (int i = 0; i < n; ++i) boundary_edge_ids_[i] = i;
+    boundary_bvh_.clear();
+    boundary_bvh_.reserve(static_cast<std::size_t>(2 * n + 1));
+    boundary_bvh_root_ = build_boundary_bvh_rec(pts, 0, n);
+#else
+    (void)pts;
+    boundary_edge_ids_.clear();
+    boundary_bvh_.clear();
+    boundary_bvh_root_ = -1;
+#endif
+  }
+
+  static bool proper_segment_cross(const Point& a, const Point& b, const Point& c, const Point& d) {
+    // Proper intersection test (excludes collinear/touching cases).
+    const double o1 = detail::cross(a, b, c);
+    const double o2 = detail::cross(a, b, d);
+    const double o3 = detail::cross(c, d, a);
+    const double o4 = detail::cross(c, d, b);
+    const double eps = detail::kEpsGeom;
+    if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
+      if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) return true;
+    }
+    return false;
+  }
+
+  bool diagonal_crosses_boundary_bvh(const std::vector<Point>& pts, int node_idx, const Point& a, const Point& b, int u, int v) const {
+    const BvhNode& node = boundary_bvh_[node_idx];
+    if (!segment_intersects_aabb(a, b, node.box)) return false;
+    if (node.left < 0 && node.right < 0) {
+      const int n = static_cast<int>(pts.size());
+      for (int i = 0; i < node.count; ++i) {
+        const int e = boundary_edge_ids_[node.start + i];
+        const int p = e;
+        const int q = (e + 1 == n) ? 0 : (e + 1);
+        // Skip edges incident to u or v.
+        if (p == u || p == v || q == u || q == v) continue;
+        if (proper_segment_cross(a, b, pts[p], pts[q])) return true;
+      }
+      return false;
+    }
+    if (node.left >= 0 && diagonal_crosses_boundary_bvh(pts, node.left, a, b, u, v)) return true;
+    if (node.right >= 0 && diagonal_crosses_boundary_bvh(pts, node.right, a, b, u, v)) return true;
+    return false;
+  }
+
+  // Check if segment (u,v) crosses any polygon boundary edge.
   // This ensures the diagonal doesn't exit the polygon.
   bool diagonal_crosses_boundary(const std::vector<Point>& pts, int u, int v) const {
-    const int n = static_cast<int>(pts.size());
-    if (u > v) std::swap(u, v);
-    
-    // Check boundary edges from u+1 to v-1 (strictly between u and v in index order).
-    for (int i = u + 1; i < v; ++i) {
-      const int j = i + 1;  // boundary edge (i, i+1)
-      // Use cross-product based intersection test.
-      const double o1 = detail::cross(pts[u], pts[v], pts[i]);
-      const double o2 = detail::cross(pts[u], pts[v], pts[j]);
-      const double o3 = detail::cross(pts[i], pts[j], pts[u]);
-      const double o4 = detail::cross(pts[i], pts[j], pts[v]);
-      
-      const double eps = detail::kEpsGeom;
-      if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
-        if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) {
-          return true;  // Proper crossing.
-        }
-      }
-    }
-    
-    // Also check the "wrap-around" boundary edges from v+1 to u-1.
-    for (int i = v + 1; i < n; ++i) {
-      const int j = (i + 1) % n;
-      if (j == u) continue;  // Skip edge ending at u.
-      const double o1 = detail::cross(pts[u], pts[v], pts[i]);
-      const double o2 = detail::cross(pts[u], pts[v], pts[j]);
-      const double o3 = detail::cross(pts[i], pts[j], pts[u]);
-      const double o4 = detail::cross(pts[i], pts[j], pts[v]);
-      
-      const double eps = detail::kEpsGeom;
-      if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
-        if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) {
-          return true;
-        }
-      }
-    }
-    for (int i = 0; i < u; ++i) {
-      const int j = i + 1;
-      if (j == u) continue;
-      const double o1 = detail::cross(pts[u], pts[v], pts[i]);
-      const double o2 = detail::cross(pts[u], pts[v], pts[j]);
-      const double o3 = detail::cross(pts[i], pts[j], pts[u]);
-      const double o4 = detail::cross(pts[i], pts[j], pts[v]);
-      
-      const double eps = detail::kEpsGeom;
-      if ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) {
-        if ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)) {
-          return true;
-        }
-      }
-    }
-    
-    return false;
+    if (boundary_bvh_root_ < 0) return false;
+    const Point& a = pts[u];
+    const Point& b = pts[v];
+    return diagonal_crosses_boundary_bvh(pts, boundary_bvh_root_, a, b, u, v);
   }
 
   bool add_diagonal_unique(int u, int v, int event_v, VType event_type, int chosen_chain,
@@ -545,11 +706,10 @@ private:
     if (u == v) return false;
     if (u > v) std::swap(u, v);
     
-    // Reject diagonals that cross boundary edges.
-    // This is a defensive check for algorithm bugs.
-    if (!add_diag_pts_.empty() && diagonal_crosses_boundary(add_diag_pts_, u, v)) {
-      return false;
-    }
+    // Optional defensive check (O(n) scan). Keep off for benchmarks.
+#if REFLEX_ENABLE_DIAGONAL_CROSS_CHECK
+    if (diag_check_pts_ && diagonal_crosses_boundary(*diag_check_pts_, u, v)) return false;
+#endif
     const std::uint64_t key = diag_key(u, v);
     if (!diag_set_.insert(key)) return false;
     diagonals_.push_back({u, v});
@@ -892,7 +1052,7 @@ private:
     const int n = static_cast<int>(pts.size());
     
     // Store pts reference for diagonal validation.
-    add_diag_pts_ = pts;
+    diag_check_pts_ = &pts;
     
     // Reset diagonal state for this decomposition.
     diagonals_.clear();
@@ -1081,57 +1241,88 @@ private:
       adj_flat_[adj_cur_[b]++] = a;
     }
 
-    // Order neighbors around each vertex in the *geometric* planar embedding.
+    // Order neighbors around each vertex in the outerplanar embedding induced by the
+    // polygon boundary order (0..n-1). For a non-crossing diagonal set, this provides
+    // the correct planar rotation system without any geometric angle computation.
     //
-    // We sort by polar angle using atan2. For robustness with collinear points,
-    // we use cross-product based comparison instead of atan2 to avoid floating-point
-    // edge cases.
-    for (int u = 0; u < n; ++u) {
-      const int beg = adj_off_[u];
-      const int end = adj_off_[u + 1];
-      if (end - beg <= 2) continue;
-      const double ux = pts[u].x;
-      const double uy = pts[u].y;
-      
-      // Use cross-product based polar angle comparison.
-      // Vertices are sorted CCW starting from the -x axis (angle -π).
-      auto angle_less = [&](int a, int b) {
-        const double ax = pts[a].x - ux;
-        const double ay = pts[a].y - uy;
-        const double bx = pts[b].x - ux;
-        const double by = pts[b].y - uy;
-        
-        // Determine quadrant (upper half = ay >= 0, lower half = ay < 0).
-        const bool a_upper = ay > 0 || (ay == 0 && ax > 0);
-        const bool b_upper = by > 0 || (by == 0 && bx > 0);
-        
-        if (a_upper != b_upper) {
-          // Different half-planes: upper comes before lower.
-          return a_upper;
-        }
-        
-        // Same half-plane: use cross product.
-        const double cross = ax * by - ay * bx;
-        if (cross > 1e-14) return true;
-        if (cross < -1e-14) return false;
-        
-        // Collinear: sort by distance (closer first).
-        const double da = ax * ax + ay * ay;
-        const double db = bx * bx + by * by;
-        if (da < db - 1e-20) return true;
-        if (da > db + 1e-20) return false;
-        
-        // Final tie-breaker by vertex index.
-        return a < b;
+    // For performance: per-vertex sort for smaller n (lower constant), and a linear-time
+    // radix counting sort for larger n.
+    static constexpr int kSmallPhase3N = 20000;
+    const bool small_phase3 = (n <= kSmallPhase3N);
+    if (small_phase3) {
+      auto key = [&](int u, int v) -> int {
+        int d = v - u;
+        if (d <= 0) d += n;
+        return d;  // 1..n-1, increasing along CCW boundary order
       };
-      
-      std::sort(adj_flat_.begin() + beg, adj_flat_.begin() + end, angle_less);
+      for (int u = 0; u < n; ++u) {
+        const int beg = adj_off_[u];
+        const int end = adj_off_[u + 1];
+        if (end - beg <= 2) continue;
+        std::sort(adj_flat_.begin() + beg, adj_flat_.begin() + end,
+                  [&](int a, int b) { return key(u, a) < key(u, b); });
+      }
+    } else {
+      // Linear-time neighbor ordering via radix counting sort over directed half-edges.
+      if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+      for (int u = 0; u < n; ++u) {
+        for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
+      }
+      if (static_cast<int>(halfedge_key_.size()) != m_dir) halfedge_key_.resize(m_dir);
+      for (int e = 0; e < m_dir; ++e) {
+        const int u = halfedge_src_[e];
+        const int v = adj_flat_[e];
+        int d = v - u;
+        if (d <= 0) d += n;
+        halfedge_key_[e] = d;
+      }
+
+      halfedge_idx1_.resize(m_dir);
+      halfedge_idx2_.resize(m_dir);
+      for (int i = 0; i < m_dir; ++i) halfedge_idx1_[i] = i;
+
+      // Pass 1: stable sort by key.
+      count_buf_.assign(n + 1, 0);
+      for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_key_[i]];
+      int sum = 0;
+      for (int k = 0; k <= n; ++k) {
+        const int c = count_buf_[k];
+        count_buf_[k] = sum;
+        sum += c;
+      }
+      for (int i = 0; i < m_dir; ++i) {
+        const int e = halfedge_idx1_[i];
+        const int k = halfedge_key_[e];
+        halfedge_idx2_[count_buf_[k]++] = e;
+      }
+
+      // Pass 2: stable sort by src.
+      count_buf_.assign(n + 1, 0);
+      for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_src_[halfedge_idx2_[i]]];
+      sum = 0;
+      for (int u = 0; u <= n; ++u) {
+        const int c = count_buf_[u];
+        count_buf_[u] = sum;
+        sum += c;
+      }
+      for (int i = 0; i < m_dir; ++i) {
+        const int e = halfedge_idx2_[i];
+        const int u = halfedge_src_[e];
+        halfedge_idx1_[count_buf_[u]++] = e;
+      }
+
+      adj_flat_tmp_.resize(m_dir);
+      for (int i = 0; i < m_dir; ++i) adj_flat_tmp_[i] = adj_flat_[halfedge_idx1_[i]];
+      adj_flat_.swap(adj_flat_tmp_);
+
+      // Rebuild src array for the reordered adjacency.
+      if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+      for (int u = 0; u < n; ++u) {
+        for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
+      }
     }
 
     // Face extraction: traverse directed half-edges in the planar embedding.
-    halfedge_used_.assign(m_dir, 0);
-    int used_count = 0;
-
     // Reverse half-edge map: for each directed half-edge e=(u->v), store rev(e)=(v->u)
     // as a global index in adj_flat_. Computed in O(n) time via radix counting sort on
     // the undirected key (min(u,v), max(u,v)).
@@ -1197,41 +1388,79 @@ private:
       halfedge_rev_e_[e2] = e1;
     }
 
-    // NOTE: We do not attempt to pre-mark the outer face. Instead, during face-walk
-    // we compute each cycle's signed area and triangulate only the CCW (positive-area)
-    // bounded faces. The unique CW face is the outer face and is skipped.
-
-    if (static_cast<int>(is_left_buf_.size()) != n) {
-      is_left_buf_.assign(n, 0);
-    } else {
-      std::fill(is_left_buf_.begin(), is_left_buf_.end(), 0);
+    // Validate reverse half-edge pairing (debug-only; can be costly at scale).
+#ifndef NDEBUG
+    {
+      int bad_pairs = 0;
+      for (int e = 0; e < m_dir; ++e) {
+        const int rev_e = halfedge_rev_e_[e];
+        if (rev_e < 0 || rev_e >= m_dir) { ++bad_pairs; continue; }
+        const int src_e = halfedge_src_[e];
+        const int dst_e = adj_flat_[e];
+        const int src_rev = halfedge_src_[rev_e];
+        const int dst_rev = adj_flat_[rev_e];
+        if (src_e != dst_rev || dst_e != src_rev) ++bad_pairs;
+      }
+      if (bad_pairs > 0) {
+        throw std::runtime_error("bad half-edge pairing: " + std::to_string(bad_pairs));
+      }
     }
-    is_left_touched_.clear();
+#endif
+
+    // Mark the outer face half-edges so we don't triangulate it.
+    halfedge_used_.assign(m_dir, 0);
+    int used_count = 0;
+    int outer_start_e = -1;
+    if (n >= 2) {
+      const int u0 = 0;
+      const int v0 = n - 1;
+      const int beg0 = adj_off_[u0];
+      const int end0 = adj_off_[u0 + 1];
+      if (end0 > beg0 && adj_flat_[end0 - 1] == v0) {
+        outer_start_e = end0 - 1;
+      } else {
+        for (int e = beg0; e < end0; ++e) {
+          if (adj_flat_[e] == v0) { outer_start_e = e; break; }
+        }
+      }
+    }
+    if (outer_start_e >= 0) {
+      const int start_u = 0;
+      int prev_v = start_u;
+      int curr = adj_flat_[outer_start_e];
+      halfedge_used_[outer_start_e] = 1;
+      ++used_count;
+      int idx_prev = halfedge_rev_e_[outer_start_e] - adj_off_[curr];
+      int iterations = 0;
+      while (curr != start_u && iterations < 2 * m_dir) {
+        const int deg_curr = adj_off_[curr + 1] - adj_off_[curr];
+        if (idx_prev < 0 || idx_prev >= deg_curr) break;
+        const int next_i = (idx_prev - 1 + deg_curr) % deg_curr;
+        const int e2 = adj_off_[curr] + next_i;
+        const int next_v = adj_flat_[e2];
+        if (!halfedge_used_[e2]) {
+          halfedge_used_[e2] = 1;
+          ++used_count;
+        }
+        const int rev_e2 = halfedge_rev_e_[e2];
+        prev_v = curr;
+        curr = next_v;
+        idx_prev = rev_e2 - adj_off_[next_v];
+        ++iterations;
+      }
+    }
+
+#ifndef NDEBUG
     dbg_faces_ = 0;
     dbg_failed_walks_ = 0;
     dbg_degenerate_faces_ = 0;
     dbg_iter_limit_faces_ = 0;
     dbg_cw_faces_ = 0;
     dbg_sum_face_verts_ = 0;
+#endif
 
     face_buf_.clear();
     face_buf_.reserve(32);
-
-    // Validate reverse half-edge pairing.
-    int bad_pairs = 0;
-    for (int e = 0; e < m_dir; ++e) {
-      const int rev_e = halfedge_rev_e_[e];
-      if (rev_e < 0 || rev_e >= m_dir) { ++bad_pairs; continue; }
-      const int src_e = halfedge_src_[e];
-      const int dst_e = adj_flat_[e];
-      const int src_rev = halfedge_src_[rev_e];
-      const int dst_rev = adj_flat_[rev_e];
-      // Reverse should swap src/dst.
-      if (src_e != dst_rev || dst_e != src_rev) ++bad_pairs;
-    }
-    if (bad_pairs > 0) {
-      throw std::runtime_error("bad half-edge pairing: " + std::to_string(bad_pairs));
-    }
 
     for (int start_u = 0; start_u < n; ++start_u) {
       const int deg_u = adj_off_[start_u + 1] - adj_off_[start_u];
@@ -1247,23 +1476,16 @@ private:
 
         halfedge_used_[start_e] = 1;
         ++used_count;
-        
-        // Compute idx_prev: index of reverse half-edge in curr's adjacency.
-        const int rev_start = halfedge_rev_e_[start_e];
-        int idx_prev = rev_start - adj_off_[curr];
+        int idx_prev = halfedge_rev_e_[start_e] - adj_off_[curr];
 
         double area2 = 0.0;
-
         int iterations = 0;
         while (curr != start_u && iterations < 2 * m_dir) {
           face_buf_.push_back(curr);
           area2 += pts[prev_v].x * pts[curr].y - pts[curr].x * pts[prev_v].y;
 
           const int deg_curr = adj_off_[curr + 1] - adj_off_[curr];
-          if (idx_prev < 0 || idx_prev >= deg_curr) {
-            // Invalid index - this indicates a bug in reverse pairing or adjacency.
-            break;
-          }
+          if (idx_prev < 0 || idx_prev >= deg_curr) break;
 
           const int next_i = (idx_prev - 1 + deg_curr) % deg_curr;
           const int e2 = adj_off_[curr] + next_i;
@@ -1281,53 +1503,40 @@ private:
           ++iterations;
         }
 
-        // Debug: track walk outcomes.
-        if (curr != start_u) {
-          // Walk didn't return to start - this is a bug.
+        if (curr == start_u && face_buf_.size() >= 3 && iterations < 2 * m_dir) {
+          area2 += pts[prev_v].x * pts[start_u].y - pts[start_u].x * pts[prev_v].y;
+          // Ensure CCW orientation for monotone triangulation.
+          if (area2 < -1e-12) std::reverse(face_buf_.begin(), face_buf_.end());
+#ifndef NDEBUG
+          ++dbg_faces_;
+          dbg_sum_face_verts_ += static_cast<long long>(face_buf_.size());
+#endif
+          triangulate_one_monotone_face(pts, face_buf_);
+        }
+#ifndef NDEBUG
+        else if (curr != start_u) {
           ++dbg_failed_walks_;
         } else if (face_buf_.size() < 3) {
-          // Degenerate face.
           ++dbg_degenerate_faces_;
         } else if (iterations >= 2 * m_dir) {
-          // Iteration limit hit.
           ++dbg_iter_limit_faces_;
-        } else {
-          area2 += pts[prev_v].x * pts[start_u].y - pts[start_u].x * pts[prev_v].y;
-          // The outer face has large negative area (order of bbox squared).
-          // Interior faces have positive area.
-          // We use a small tolerance for numerical issues.
-          if (area2 < -1e-10) {
-            // Outer face or CW face - skip.
-            ++dbg_cw_faces_;
-          } else {
-            // Interior face (positive or near-zero area) - triangulate.
-            ++dbg_faces_;
-            dbg_sum_face_verts_ += static_cast<long long>(face_buf_.size());
-            triangulate_one_monotone_face(pts, face_buf_);
-          }
         }
+#endif
       }
     }
 
     dbg_used_half_edges_ = used_count;
-    
-    // Count unused half-edges.
+
+#ifndef NDEBUG
+    // Count unused half-edges + Euler mismatch (debug-only).
     int unused = 0;
     for (int e = 0; e < m_dir; ++e) {
       if (!halfedge_used_[e]) ++unused;
     }
     dbg_unused_halfedges_ = unused;
-    
-    // Count total walk starts.
-    int total_walks = dbg_faces_ + dbg_cw_faces_ + dbg_failed_walks_ + 
-                      dbg_degenerate_faces_ + dbg_iter_limit_faces_;
-    dbg_total_walks_ = total_walks;
-    
-    // Verify total face count matches Euler.
-    // Expected: F = 2 + E - V = 2 + (n + diagonals_.size()) - n = 2 + diagonals_.size()
-    int expected_faces = 2 + static_cast<int>(diagonals_.size());
-    int actual_faces = dbg_faces_ + dbg_cw_faces_;
-    dbg_euler_mismatch_ = expected_faces - actual_faces;
+    dbg_total_walks_ = dbg_faces_ + dbg_cw_faces_ + dbg_failed_walks_ + dbg_degenerate_faces_ + dbg_iter_limit_faces_;
+    dbg_euler_mismatch_ = (2 + static_cast<int>(diagonals_.size())) - (dbg_faces_ + dbg_cw_faces_);
+#endif
   }
 
   // Check if segment (a,b) properly intersects segment (c,d).
@@ -1493,9 +1702,152 @@ private:
   }
 
   void triangulate_one_monotone_face(const std::vector<Point>& pts, const std::vector<int>& face) {
-    // Use ear clipping for robust triangulation of any simple polygon.
-    // The faces from y-monotone decomposition are simple, so ear clipping always works.
-    triangulate_face_ear_clipping(pts, face);
+    const int m = static_cast<int>(face.size());
+    if (m < 3) return;
+    if (m == 3) {
+      triangles_.push_back({face[0], face[1], face[2]});
+      return;
+    }
+
+    // Triangulate a y-monotone face in O(m) time (PolyPartition-style, robust).
+    // Work in the index space of `face` (0..m-1) and emit triangles in original vertex ids.
+    int topindex = 0;
+    int bottomindex = 0;
+    for (int i = 1; i < m; ++i) {
+      if (detail::below(pts, face[i], face[bottomindex])) bottomindex = i;
+      if (detail::below(pts, face[topindex], face[i])) topindex = i;
+    }
+
+    // Verify monotonicity only in debug builds (performance-critical in benchmarks).
+#ifndef NDEBUG
+    {
+      int i = topindex;
+      while (i != bottomindex) {
+        int i2 = i + 1;
+        if (i2 >= m) i2 = 0;
+        if (!detail::below(pts, face[i2], face[i])) {
+          triangulate_face_ear_clipping(pts, face);
+          return;
+        }
+        i = i2;
+      }
+      i = bottomindex;
+      while (i != topindex) {
+        int i2 = i + 1;
+        if (i2 >= m) i2 = 0;
+        if (!detail::below(pts, face[i], face[i2])) {
+          triangulate_face_ear_clipping(pts, face);
+          return;
+        }
+        i = i2;
+      }
+    }
+#endif
+
+    // Merge left and right vertex chains into `tmp_sorted_` (priority order).
+    // Also store vertex types in `tmp_chain1_`:  1=left chain, -1=right chain, 0=top/bottom.
+    tmp_sorted_.assign(m, 0);
+    tmp_chain1_.assign(m, 0);
+    tmp_sorted_[0] = topindex;
+    tmp_chain1_[topindex] = 0;
+    int leftindex = topindex + 1;
+    if (leftindex >= m) leftindex = 0;
+    int rightindex = topindex - 1;
+    if (rightindex < 0) rightindex = m - 1;
+
+    for (int k = 1; k < m - 1; ++k) {
+      if (leftindex == bottomindex) {
+        tmp_sorted_[k] = rightindex;
+        rightindex--;
+        if (rightindex < 0) rightindex = m - 1;
+        tmp_chain1_[tmp_sorted_[k]] = -1;
+      } else if (rightindex == bottomindex) {
+        tmp_sorted_[k] = leftindex;
+        leftindex++;
+        if (leftindex >= m) leftindex = 0;
+        tmp_chain1_[tmp_sorted_[k]] = 1;
+      } else {
+        // Pick the higher (more topmost) vertex among left/right.
+        if (detail::below(pts, face[leftindex], face[rightindex])) {
+          tmp_sorted_[k] = rightindex;
+          rightindex--;
+          if (rightindex < 0) rightindex = m - 1;
+          tmp_chain1_[tmp_sorted_[k]] = -1;
+        } else {
+          tmp_sorted_[k] = leftindex;
+          leftindex++;
+          if (leftindex >= m) leftindex = 0;
+          tmp_chain1_[tmp_sorted_[k]] = 1;
+        }
+      }
+    }
+    tmp_sorted_[m - 1] = bottomindex;
+    tmp_chain1_[bottomindex] = 0;
+
+    // Stack-based triangulation.
+    tmp_stack_.resize(m);
+    int stackptr = 0;
+    tmp_stack_[0] = tmp_sorted_[0];
+    tmp_stack_[1] = tmp_sorted_[1];
+    stackptr = 2;
+
+    for (int k = 2; k < m - 1; ++k) {
+      const int vpos = tmp_sorted_[k];
+      if (tmp_chain1_[vpos] != tmp_chain1_[tmp_stack_[stackptr - 1]]) {
+        for (int j = 0; j < stackptr - 1; ++j) {
+          const int a = tmp_stack_[j];
+          const int b = tmp_stack_[j + 1];
+          if (tmp_chain1_[vpos] == 1) {
+            triangles_.push_back({face[b], face[a], face[vpos]});
+          } else {
+            triangles_.push_back({face[a], face[b], face[vpos]});
+          }
+        }
+        tmp_stack_[0] = tmp_sorted_[k - 1];
+        tmp_stack_[1] = tmp_sorted_[k];
+        stackptr = 2;
+      } else {
+        stackptr--;
+        while (stackptr > 0) {
+          const int p_v = face[vpos];
+          if (tmp_chain1_[vpos] == 1) {
+            // IsConvex(v, stack[stackptr-1], stack[stackptr])
+            const int p_a = face[tmp_stack_[stackptr - 1]];
+            const int p_b = face[tmp_stack_[stackptr]];
+            if (detail::cross(pts[p_v], pts[p_a], pts[p_b]) > detail::kEpsGeom) {
+              triangles_.push_back({p_v, p_a, p_b});
+              stackptr--;
+            } else {
+              break;
+            }
+          } else {
+            // IsConvex(v, stack[stackptr], stack[stackptr-1])
+            const int p_a = face[tmp_stack_[stackptr]];
+            const int p_b = face[tmp_stack_[stackptr - 1]];
+            if (detail::cross(pts[p_v], pts[p_a], pts[p_b]) > detail::kEpsGeom) {
+              triangles_.push_back({p_v, p_a, p_b});
+              stackptr--;
+            } else {
+              break;
+            }
+          }
+        }
+        stackptr++;
+        tmp_stack_[stackptr] = vpos;
+        stackptr++;
+      }
+    }
+
+    const int vpos = tmp_sorted_[m - 1];  // bottom
+    for (int j = 0; j < stackptr - 1; ++j) {
+      const int a = tmp_stack_[j];
+      const int b = tmp_stack_[j + 1];
+      if (tmp_chain1_[b] == 1) {
+        triangles_.push_back({face[a], face[b], face[vpos]});
+      } else {
+        triangles_.push_back({face[b], face[a], face[vpos]});
+      }
+    }
   }
 };
 

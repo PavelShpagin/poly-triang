@@ -43,7 +43,9 @@ static int count_local_maxima_k(const std::vector<std::pair<double, double>>& co
 }
 
 void print_usage(const char* prog) {
-    std::cerr << "Usage: " << prog << " --input <polygon.poly> --output <output.tri> [--algo chain|linked|seidel]\n";
+    std::cerr << "Usage: " << prog
+              << " --input <polygon.poly> --output <output.tri> "
+                 "[--algo chain|chain_only|linked|seidel]\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -60,6 +62,9 @@ int main(int argc, char* argv[]) {
             if (++i < argc) algo = argv[i];
         }
     }
+
+    // Backwards-compatible alias (older docs / scripts).
+    if (algo == "chain_only") algo = "chain";
     
     if (input_file.empty() || output_file.empty()) {
         print_usage(argv[0]);
