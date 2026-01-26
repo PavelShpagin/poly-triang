@@ -1245,63 +1245,81 @@ private:
     // polygon boundary order (0..n-1). For a non-crossing diagonal set, this provides
     // the correct planar rotation system without any geometric angle computation.
     //
-    // We do this in deterministic linear time via a radix-style stable counting sort
-    // over directed half-edges by the key d = (v-u mod n) in 1..n-1.
-    if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
-    for (int u = 0; u < n; ++u) {
-      for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
-    }
-    if (static_cast<int>(halfedge_key_.size()) != m_dir) halfedge_key_.resize(m_dir);
-    for (int e = 0; e < m_dir; ++e) {
-      const int u = halfedge_src_[e];
-      const int v = adj_flat_[e];
-      int d = v - u;
-      if (d <= 0) d += n;
-      halfedge_key_[e] = d;  // 1..n-1, increasing along CCW boundary order
-    }
+    // For performance: per-vertex sort for smaller n (lower constant), and a linear-time
+    // radix counting sort for larger n.
+    static constexpr int kSmallPhase3N = 20000;
+    const bool small_phase3 = (n <= kSmallPhase3N);
+    if (small_phase3) {
+      auto key = [&](int u, int v) -> int {
+        int d = v - u;
+        if (d <= 0) d += n;
+        return d;  // 1..n-1, increasing along CCW boundary order
+      };
+      for (int u = 0; u < n; ++u) {
+        const int beg = adj_off_[u];
+        const int end = adj_off_[u + 1];
+        if (end - beg <= 2) continue;
+        std::sort(adj_flat_.begin() + beg, adj_flat_.begin() + end,
+                  [&](int a, int b) { return key(u, a) < key(u, b); });
+      }
+    } else {
+      // Linear-time neighbor ordering via radix counting sort over directed half-edges.
+      if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+      for (int u = 0; u < n; ++u) {
+        for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
+      }
+      if (static_cast<int>(halfedge_key_.size()) != m_dir) halfedge_key_.resize(m_dir);
+      for (int e = 0; e < m_dir; ++e) {
+        const int u = halfedge_src_[e];
+        const int v = adj_flat_[e];
+        int d = v - u;
+        if (d <= 0) d += n;
+        halfedge_key_[e] = d;
+      }
 
-    halfedge_idx1_.resize(m_dir);
-    halfedge_idx2_.resize(m_dir);
-    for (int i = 0; i < m_dir; ++i) halfedge_idx1_[i] = i;
+      halfedge_idx1_.resize(m_dir);
+      halfedge_idx2_.resize(m_dir);
+      for (int i = 0; i < m_dir; ++i) halfedge_idx1_[i] = i;
 
-    // Pass 1: stable sort by key.
-    count_buf_.assign(n + 1, 0);
-    for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_key_[i]];
-    int sum = 0;
-    for (int k = 0; k <= n; ++k) {
-      const int c = count_buf_[k];
-      count_buf_[k] = sum;
-      sum += c;
-    }
-    for (int i = 0; i < m_dir; ++i) {
-      const int e = halfedge_idx1_[i];
-      const int k = halfedge_key_[e];
-      halfedge_idx2_[count_buf_[k]++] = e;
-    }
+      // Pass 1: stable sort by key.
+      count_buf_.assign(n + 1, 0);
+      for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_key_[i]];
+      int sum = 0;
+      for (int k = 0; k <= n; ++k) {
+        const int c = count_buf_[k];
+        count_buf_[k] = sum;
+        sum += c;
+      }
+      for (int i = 0; i < m_dir; ++i) {
+        const int e = halfedge_idx1_[i];
+        const int k = halfedge_key_[e];
+        halfedge_idx2_[count_buf_[k]++] = e;
+      }
 
-    // Pass 2: stable sort by src.
-    count_buf_.assign(n + 1, 0);
-    for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_src_[halfedge_idx2_[i]]];
-    sum = 0;
-    for (int u = 0; u <= n; ++u) {
-      const int c = count_buf_[u];
-      count_buf_[u] = sum;
-      sum += c;
-    }
-    for (int i = 0; i < m_dir; ++i) {
-      const int e = halfedge_idx2_[i];
-      const int u = halfedge_src_[e];
-      halfedge_idx1_[count_buf_[u]++] = e;
-    }
+      // Pass 2: stable sort by src.
+      count_buf_.assign(n + 1, 0);
+      for (int i = 0; i < m_dir; ++i) ++count_buf_[halfedge_src_[halfedge_idx2_[i]]];
+      sum = 0;
+      for (int u = 0; u <= n; ++u) {
+        const int c = count_buf_[u];
+        count_buf_[u] = sum;
+        sum += c;
+      }
+      for (int i = 0; i < m_dir; ++i) {
+        const int e = halfedge_idx2_[i];
+        const int u = halfedge_src_[e];
+        halfedge_idx1_[count_buf_[u]++] = e;
+      }
 
-    adj_flat_tmp_.resize(m_dir);
-    for (int i = 0; i < m_dir; ++i) adj_flat_tmp_[i] = adj_flat_[halfedge_idx1_[i]];
-    adj_flat_.swap(adj_flat_tmp_);
+      adj_flat_tmp_.resize(m_dir);
+      for (int i = 0; i < m_dir; ++i) adj_flat_tmp_[i] = adj_flat_[halfedge_idx1_[i]];
+      adj_flat_.swap(adj_flat_tmp_);
 
-    // Rebuild src array for the reordered adjacency.
-    if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
-    for (int u = 0; u < n; ++u) {
-      for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
+      // Rebuild src array for the reordered adjacency.
+      if (static_cast<int>(halfedge_src_.size()) != m_dir) halfedge_src_.resize(m_dir);
+      for (int u = 0; u < n; ++u) {
+        for (int e = adj_off_[u]; e < adj_off_[u + 1]; ++e) halfedge_src_[e] = u;
+      }
     }
 
     // Face extraction: traverse directed half-edges in the planar embedding.
