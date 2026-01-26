@@ -57,7 +57,7 @@
 \begin{abstract}
 We present a practical algorithm for triangulating a simple polygon with $n$ vertices in $O(n + k\log k)$ time, where $k$ is the number of local extrema (local maxima, equivalently local minima) with respect to the sweep direction.
 The key idea is a chain-based reformulation of monotone decomposition: the sweep maintains active monotone chains rather than individual edges and advances chain pointers lazily, so the work over all regular vertices is $O(n)$ amortized while the sweep performs $O(k\log k)$ balanced-tree work over the $2k$ extrema.
-Experiments against implementations of Garey et al., Hertel--Mehlhorn, and Seidel show that our method is competitive across polygon families, with large speedups on nearly convex inputs ($k=O(1)$). We also include the standard linear-time fan triangulation fast path for convex polygons.
+Experiments against implementations of Garey et al.\ (monotone decomposition), Seidel, and a CGAL Hertel--Mehlhorn convex-partition baseline show that our method is competitive across polygon families, with large speedups on nearly convex inputs ($k=O(1)$). We also include the standard linear-time fan triangulation fast path for convex polygons.
 \end{abstract}
 
 \begin{keyword}
@@ -81,7 +81,9 @@ The key observation is that the sweep needs to process only local extrema, and r
 \paragraph{Related work}
 The triangulation problem has a rich history spanning four decades. The earliest approaches include the ear-clipping method of ElGindy et al.~\cite{elgindy1985}, which runs in $O(n^2)$ time. Garey et al.~\cite{garey1978} achieved $O(n \log n)$ time through monotone decomposition, which remains the standard practical approach; see de Berg et al.~\cite{deberg2008} for a textbook treatment.
 
-Hertel and Mehlhorn~\cite{hertel1983} described an $O(n \log n)$ algorithm that first triangulates, then merges triangles into a convex partition with at most $4$ times the minimum number of convex pieces; this convex-partition step is sometimes used as a triangulation subroutine. Subsequent work focused on reducing the $O(n \log n)$ bound. Tarjan and Van Wyk~\cite{tarjan1988} achieved $O(n \log \log n)$ using sophisticated data structures, later simplified by Kirkpatrick et al.~\cite{kirkpatrick1992}. Randomized approaches proved fruitful: Clarkson et al.~\cite{clarkson1989} gave an $O(n \log^* n)$ expected-time Las Vegas algorithm, which Seidel~\cite{seidel1991} simplified significantly using trapezoidal decomposition. Amato et al.~\cite{amato2001} provided further simplifications of randomized linear-time triangulation.
+Instance-sensitive bounds are also classical. Hertel and Mehlhorn~\cite{hertel1983} give a plane-sweep triangulation algorithm running in \(O(n + s\log s)\), where \(s\) is the number of \emph{start vertices} (vertices whose two neighbors have larger \(x\)-coordinate). For a simple polygon, \(s\) is bounded by the number of reflex vertices plus one, and their framework also yields a constant-factor approximation for convex partitioning. Our parameter \(k\) is another extrema-count with respect to a sweep direction, and \Cref{sec:complexity} shows \(k \le r+1\) as well.
+
+Subsequent work focused on improving worst-case bounds in \(n\). Tarjan and Van Wyk~\cite{tarjan1988} achieved $O(n \log \log n)$ using sophisticated data structures, later simplified by Kirkpatrick et al.~\cite{kirkpatrick1992}. Randomized approaches proved fruitful: Clarkson et al.~\cite{clarkson1989} gave an $O(n \log^* n)$ expected-time Las Vegas algorithm, which Seidel~\cite{seidel1991} simplified significantly using trapezoidal decomposition. Amato et al.~\cite{amato2001} provided further simplifications of randomized linear-time triangulation.
 
 The breakthrough came with Chazelle's~\cite{chazelle1991} deterministic $O(n)$ algorithm, resolving a long-standing open problem. However, the algorithm's complexity---involving hierarchical polygon decomposition and intricate merge operations---has limited practical adoption. Fournier and Montuno~\cite{fournier1984} studied triangulation of monotone polygons. Keil~\cite{keil2000} surveys polygon decomposition more broadly.
 
@@ -89,8 +91,8 @@ Beyond $n$-based worst-case analysis, instance/output complexity measures have a
 Chazelle and Incerpi~\cite{chazelle1984} study triangulation and shape complexity, and Toussaint~\cite{toussaint1990,toussaint1991} gives triangulation algorithms whose running time depends on an \emph{output} measure of the produced triangulation.
 Separately, the number of monotone chains/extrema depends on the sweep direction; Shin and Kim~\cite{shin2004} study choosing a direction that optimizes a monotone-chain decomposition.
 
-Our contribution is a deterministic sweep-based algorithm with running time $O(n + k \log k)$ parameterized by the number of local extrema $k$, achieved by maintaining chains in the sweep status structure and handling regular vertices lazily.
-To the best of our knowledge, this explicit extrema-parameterization of monotone decomposition (together with an implementation-oriented equivalence proof to the textbook sweep) has not been previously stated for polygon triangulation.
+Our contribution is a deterministic chain-based reformulation of monotone decomposition that makes an extrema parameter \(k\) explicit in both the analysis and the implementation: the sweep performs balanced-tree work only at the \(2k\) extremal events, while all regular vertices are handled via amortized pointer advancement along chains.
+For correctness, we prove equivalence to the classical helper-based monotone-decomposition sweep (see, e.g., de Berg et al.~\cite{deberg2008}): under the same event order and tie-breaking, our chain-based sweep produces the same decomposition diagonals.
 
 \paragraph{Organization}
 \Cref{sec:prelim} defines vertex types, monotone chains, and the event-complexity parameter $k$. \Cref{sec:algorithm} presents the algorithm. \Cref{sec:correctness} establishes correctness. \Cref{sec:complexity} analyzes complexity and relates $k$ to the reflex count $r$. \Cref{sec:experiments} provides experimental evaluation. \Cref{sec:discussion} discusses extensions.
@@ -114,7 +116,7 @@ Assuming general position (no two vertices share the same $y$-coordinate), each 
 \end{itemize}
 \end{definition}
 
-Start and split vertices are \emph{local maxima}; end and merge vertices are \emph{local minima}. Split and merge vertices are precisely the reflex vertices among local extrema. Regular vertices partition into two subtypes based on whether the polygon interior lies to their left or right as one traverses the boundary; this distinction is needed in \textsc{Advance} to mirror the textbook sweep's regular-vertex behavior, but it does not affect the asymptotic bounds.
+Start and split vertices are \emph{local maxima}; end and merge vertices are \emph{local minima}. Split and merge vertices are precisely the reflex vertices among local extrema. Regular vertices partition into two subtypes based on whether the polygon interior lies to their left or right as one traverses the boundary; this distinction is needed in \textsc{Advance} to mirror the classical sweep's regular-vertex behavior, but it does not affect the asymptotic bounds.
 
 \begin{definition}[Monotone chain]
 \label{def:chain}
@@ -178,7 +180,7 @@ The comparison function for $T$, when comparing chains at sweep height $y$, firs
     \EndWhile
 \EndProcedure
 \end{algorithmic}
-Here $\mathsf{InteriorRight}(u)$ is the standard regular-vertex side test from the textbook sweep (i.e., the subtype of regular vertices handled like an end vertex); it can be decided from the local boundary configuration at $u$.
+Here $\mathsf{InteriorRight}(u)$ is the standard regular-vertex side test from the classical sweep (i.e., the subtype of regular vertices handled like an end vertex); it can be decided from the local boundary configuration at $u$.
 After advancement, the $x$-coordinate of $C$ at height $y$ is computed by linear interpolation along $C.\mathit{curr}$. Since each vertex is visited by at most one chain's pointer exactly once, the total cost of all pointer advancements (and any diagonals emitted inside \textsc{Advance}) is $O(n)$, amortized over all tree operations.
 
 \paragraph{Event processing}
@@ -400,12 +402,12 @@ Each $y$-monotone polygon with $m$ vertices is triangulated in $O(m)$ time using
 
 The geometric idea of \Cref{alg:decompose} is to implement the classical monotone-decomposition sweep (e.g., de~Berg et al.~\cite{deberg2008}) while exploiting the fact that regular vertices occur only along monotone chains.
 Instead of processing every regular vertex as an explicit event, we maintain, for each active chain, a pointer to its current edge at the sweep height and update it lazily.
-Correctness is therefore best stated as an equivalence to the textbook sweep, rather than via ad-hoc visibility regions.
+Correctness is therefore best stated as an equivalence to the classical sweep, rather than via ad-hoc visibility regions.
 
-\paragraph{Textbook baseline (edge-based sweep)}
+\paragraph{Classical baseline (edge-based sweep)}
 The classical algorithm maintains a balanced BST of active edges intersecting the sweep line, ordered by their intersection $x$-coordinate.
 Each active edge $e$ stores a vertex $\mathit{helper}(e)$, defined as the most recently processed vertex above the sweep line that can ``see'' $e$ from the interior.
-As in the textbook algorithm~\cite{deberg2008}, diagonals are inserted whenever the relevant helper is a \emph{merge} vertex (this can occur at split, merge, end, and certain regular vertices).
+As in the classical algorithm~\cite{deberg2008}, diagonals are inserted whenever the relevant helper is a \emph{merge} vertex (this can occur at split, merge, end, and certain regular vertices).
 The resulting diagonal set is known to be valid and to yield a $y$-monotone decomposition; see~\cite{deberg2008}.
 
 \paragraph{Chain-based representation}
@@ -432,7 +434,7 @@ Intuitively, $\mathit{ih}(C,y)$ is the last vertex of $C$ that the sweep has pas
 Fix any chain $C$ and consider two sweep heights $y_1 > y_2$ with no extrema between them.
 Let $e_1 = e(C,y_1)$ and $e_2 = e(C,y_2)$ after performing \textsc{Advance} as needed.
 Then $\mathit{ih}(C,y_2)$ equals the last vertex of $C$ encountered when walking down $C$ from its top endpoint until reaching height $y_2$; moreover, along this descent, every regular vertex of $C$ is encountered exactly once over the entire sweep.
-If \textsc{Advance} emits a diagonal at a regular vertex (as in \Cref{sec:decomposition}), that diagonal coincides with the diagonal inserted by the textbook sweep at that regular vertex (to a pending merge helper).
+If \textsc{Advance} emits a diagonal at a regular vertex (as in \Cref{sec:decomposition}), that diagonal coincides with the diagonal inserted by the classical sweep at that regular vertex (to a pending merge helper).
 \end{lemma}
 
 \begin{proof}
@@ -441,13 +443,13 @@ Therefore the upper endpoint of the resulting current edge is exactly the last c
 Since $C.\mathit{curr}$ only moves forward (down the chain), each vertex of $C$ can become an upper endpoint of $C.\mathit{curr}$ at most once, implying the claimed ``encountered once'' property.
 
 The only diagonals emitted inside \textsc{Advance} are of the form $(u, C.\mathit{pending})$ at a regular vertex $u$ with $\mathsf{InteriorRight}(u)$.
-By \Cref{def:pending-helper}, $C.\mathit{pending}$ represents the textbook merge-helper state of the corresponding active edge on this chain.
-The textbook sweep inserts exactly this diagonal at $u$ in the regular-vertex case when that helper is a merge vertex~\cite{deberg2008}.
+By \Cref{def:pending-helper}, $C.\mathit{pending}$ represents the classical merge-helper state of the corresponding active edge on this chain.
+The classical sweep inserts exactly this diagonal at $u$ in the regular-vertex case when that helper is a merge vertex~\cite{deberg2008}.
 \end{proof}
 
 \begin{definition}[Pending as ``merge-helper'']
 \label{def:pending-helper}
-In the textbook sweep, the only helper values that trigger a diagonal later are merge vertices.
+In the classical sweep, the only helper values that trigger a diagonal later are merge vertices.
 We encode this by storing, for each active chain $C$, a field $C.\mathit{pending}$ which is either null or a merge vertex.
 We interpret
 \[
@@ -461,41 +463,41 @@ If $C.\mathit{pending} = \textsc{null}$, the role of $\mathit{helper}\bigl(e(C,y
 \begin{lemma}[Equivalence of diagonals]
 \label{lem:equiv-target}
 Let $D_{\mathrm{chain}}$ be the set of diagonals produced by \Cref{alg:decompose} together with any diagonals emitted inside \textsc{Advance}.
-Let $D_{\mathrm{text}}$ be the set of diagonals produced by the textbook edge-based sweep on the same polygon and event order.
+Let $D_{\mathrm{text}}$ be the set of diagonals produced by the classical edge-based sweep on the same polygon and event order.
 Then $D_{\mathrm{chain}} = D_{\mathrm{text}}$.
 \end{lemma}
 
 \begin{proof}
-We compare \Cref{alg:decompose} to the textbook sweep run on the same polygon, with the same decreasing-$y$ event order.
+We compare \Cref{alg:decompose} to the classical sweep run on the same polygon, with the same decreasing-$y$ event order.
 
 \medskip
 \noindent\textbf{Step 1: Ordering agreement.}
 Fix any height $y$ strictly between consecutive event levels.
 For every active chain $C$, the edge $e(C,y)$ intersects the sweep line in exactly one point.
-By definition of our BST keys, the in-order ordering of chains in $T$ is the left-to-right ordering of these intersection points, hence agrees with the textbook ordering of the corresponding active edges.
-Therefore, when \Cref{alg:decompose} takes ``the predecessor of $v$ in $T$'', it identifies the same geometric object as ``the active edge immediately left of $v$'' in the textbook sweep.
+By definition of our BST keys, the in-order ordering of chains in $T$ is the left-to-right ordering of these intersection points, hence agrees with the classical ordering of the corresponding active edges.
+Therefore, when \Cref{alg:decompose} takes ``the predecessor of $v$ in $T$'', it identifies the same geometric object as ``the active edge immediately left of $v$'' in the classical sweep.
 
 \medskip
 \noindent\textbf{Step 2: Helper agreement on regular vertices via \textsc{Advance}.}
-The textbook sweep updates $\mathit{helper}(e)$ at regular vertices when the current active edge on a chain changes to the next edge below, and it may also add a diagonal at a regular vertex when the relevant helper is a merge vertex.
+The classical sweep updates $\mathit{helper}(e)$ at regular vertices when the current active edge on a chain changes to the next edge below, and it may also add a diagonal at a regular vertex when the relevant helper is a merge vertex.
 Our algorithm does not process those regular vertices as events, but it does update the current edge implicitly: whenever $T$ needs the key of a chain at some height $y$, it calls \textsc{Advance} so that the stored edge equals $e(C,y)$.
-By \Cref{lem:advance-sim}, the vertex $\mathit{ih}(C,y)$ equals the last vertex encountered when walking down the chain to height $y$, which is exactly the vertex that the textbook sweep would have last assigned as helper on the current edge of that chain unless that helper is a merge vertex awaiting a future diagonal.
+By \Cref{lem:advance-sim}, the vertex $\mathit{ih}(C,y)$ equals the last vertex encountered when walking down the chain to height $y$, which is exactly the vertex that the classical sweep would have last assigned as helper on the current edge of that chain unless that helper is a merge vertex awaiting a future diagonal.
 We encode precisely this exception via \Cref{def:pending-helper}.
-When $\mathit{helper}(e)$ is a merge vertex and the textbook sweep would add a diagonal at a regular vertex, our \textsc{Advance} emits the same diagonal using $C.\mathit{pending}$ and clears it (see \Cref{sec:decomposition}).
+When $\mathit{helper}(e)$ is a merge vertex and the classical sweep would add a diagonal at a regular vertex, our \textsc{Advance} emits the same diagonal using $C.\mathit{pending}$ and clears it (see \Cref{sec:decomposition}).
 
 \medskip
 \noindent\textbf{Step 3: Case analysis at extrema events.}
 Let $v$ be the next event vertex processed.
 \begin{itemize}
-    \item \textbf{Start.} In the textbook sweep, a start vertex inserts its outgoing edge(s) into the status structure and sets their helpers to $v$. In our representation, the unique left-boundary chain originating at $v$ is inserted into $T$ and its pointer is initialized so that $\mathit{ih}(C,y)=v$ for heights just below $v$; also $C.\mathit{pending}$ is null. Thus the (merge-)helper information agrees.
+    \item \textbf{Start.} In the classical sweep, a start vertex inserts its outgoing edge(s) into the status structure and sets their helpers to $v$. In our representation, the unique left-boundary chain originating at $v$ is inserted into $T$ and its pointer is initialized so that $\mathit{ih}(C,y)=v$ for heights just below $v$; also $C.\mathit{pending}$ is null. Thus the (merge-)helper information agrees.
 
-    \item \textbf{End.} In the textbook sweep, the edge terminating at an end vertex is removed, and if its helper is a merge vertex then a diagonal is added from $v$ to that helper. In our representation, we remove the terminating left-boundary chain $R$; if $R.\mathit{pending}\neq \textsc{null}$ we add the same diagonal before removal. Hence the diagonal action agrees.
+    \item \textbf{End.} In the classical sweep, the edge terminating at an end vertex is removed, and if its helper is a merge vertex then a diagonal is added from $v$ to that helper. In our representation, we remove the terminating left-boundary chain $R$; if $R.\mathit{pending}\neq \textsc{null}$ we add the same diagonal before removal. Hence the diagonal action agrees.
 
-    \item \textbf{Split.} In the textbook sweep, at a split vertex $v$ one finds the active edge $e$ immediately left of $v$ and adds a diagonal from $v$ to $\mathit{helper}(e)$; then $\mathit{helper}(e)$ is set to $v$, and the new edge leaving $v$ is inserted with helper $v$.
-    In our representation, $L$ is the predecessor chain (Step 1), so its current edge equals $e(L,v.y)$; by Step 2, the helper used by the textbook sweep on that edge is either $L.\mathit{pending}$ (if it is a merge) or $\mathit{ih}(L,v.y)=L.\mathit{curr}.\mathit{upper}$ (otherwise).
+    \item \textbf{Split.} In the classical sweep, at a split vertex $v$ one finds the active edge $e$ immediately left of $v$ and adds a diagonal from $v$ to $\mathit{helper}(e)$; then $\mathit{helper}(e)$ is set to $v$, and the new edge leaving $v$ is inserted with helper $v$.
+    In our representation, $L$ is the predecessor chain (Step 1), so its current edge equals $e(L,v.y)$; by Step 2, the helper used by the classical sweep on that edge is either $L.\mathit{pending}$ (if it is a merge) or $\mathit{ih}(L,v.y)=L.\mathit{curr}.\mathit{upper}$ (otherwise).
     \Cref{alg:decompose} adds exactly the corresponding diagonal, clears $L.\mathit{pending}$ if it was used, and inserts the new left-boundary chain from $v$ with implicit helper $v$. Thus the diagonal target agrees.
 
-    \item \textbf{Merge.} In the textbook sweep, at a merge vertex $v$ one may add a diagonal to the helper of the edge terminating at $v$ if that helper is a merge, removes that edge, then finds the edge immediately left of $v$ and may add a diagonal to its merge helper, finally setting the helper of the left edge to $v$.
+    \item \textbf{Merge.} In the classical sweep, at a merge vertex $v$ one may add a diagonal to the helper of the edge terminating at $v$ if that helper is a merge, removes that edge, then finds the edge immediately left of $v$ and may add a diagonal to its merge helper, finally setting the helper of the left edge to $v$.
     In our representation, we (i) remove the chain terminating at $v$ after emitting a diagonal to its pending merge (if any), (ii) emit a diagonal to the pending merge of the immediately-left chain (if any), and (iii) set that chain's pending to $v$. Therefore the diagonal targets agree.
 \end{itemize}
 \end{proof}
@@ -506,8 +508,8 @@ Let $v$ be the next event vertex processed.
 \end{theorem}
 
 \begin{proof}
-By \Cref{lem:equiv-target}, \Cref{alg:decompose} outputs exactly the same diagonals as the textbook monotone-decomposition sweep, interpreted through our chain representation.
-The textbook sweep's diagonals are interior, non-crossing, and remove all split/merge vertices, yielding $y$-monotone pieces~\cite{deberg2008}.
+By \Cref{lem:equiv-target}, \Cref{alg:decompose} outputs exactly the same diagonals as the classical monotone-decomposition sweep, interpreted through our chain representation.
+The classical sweep's diagonals are interior, non-crossing, and remove all split/merge vertices, yielding $y$-monotone pieces~\cite{deberg2008}.
 Hence the same properties hold for our output.
 \end{proof}
 
