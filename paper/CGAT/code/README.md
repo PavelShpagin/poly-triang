@@ -1,6 +1,6 @@
 # CGTA Submission Code Package
 
-This folder contains the **code package** accompanying the CGTA submission in `paper/CGAT/submission.tex`.
+This folder contains the **code package** accompanying the CGTA submission in `../submission.tex`.
 
 ## Contents
 
@@ -9,8 +9,8 @@ This folder contains the **code package** accompanying the CGTA submission in `p
 
 ## Build (ours)
 
-The top-level `paper/CGAT/build.sh` builds all binaries used by the benchmark.
-To build only our CLI from `paper/CGAT/code/ours/`:
+The top-level `../build.sh` builds all binaries used by the benchmark.
+To build only our CLI from `ours/`:
 
 ```bash
 g++ -O3 -std=c++17 reflex_cli.cpp -o reflex_cli

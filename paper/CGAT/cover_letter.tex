@@ -1,0 +1,41 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.7em}
+
+\begin{document}
+
+\begin{flushright}
+January 26, 2026
+\end{flushright}
+
+Dear Editors,
+
+Please consider our manuscript, \emph{``A Simple, Practical, and Fast Polygon Triangulation in \(O(n + k\log k)\) Time,''} for publication in \emph{Computational Geometry: Theory and Applications (CGTA)}.
+
+This submission is a substantially revised version of our previous manuscript (titled \emph{``Practical polygonal triangulation in \(O(n + r\log r)\) time''}). We rewrote the paper for clarity and strengthened both the theory and the experimental evaluation.
+
+\textbf{Summary of contributions.}
+We present a simple, implementation-friendly, deterministic triangulation algorithm for simple polygons with \(n\) vertices running in \(O(n + k\log k)\) time, where \(k\) is the number of local maxima (equivalently local minima) with respect to the sweep direction.
+In our benchmarks, it is the fastest among the compared practical implementations.
+The algorithm is designed to be practical: the sweep performs balanced-tree work only at the \(2k\) extremal events, while all regular vertices are handled implicitly by amortized pointer advancement along monotone chains.
+
+\textbf{Improvements over the previous submission.}
+\begin{itemize}
+  \item \textbf{Simpler and more faithful presentation.} The decomposition is presented directly in terms of split/merge event handling (with a chain-centric status structure). The example figure and pseudocode are aligned with this formulation, and the correctness argument is streamlined by proving equivalence to the classical monotone-decomposition sweep.
+  \item \textbf{Stronger, cleaner theorems.} We analyze the running time in terms of the event complexity \(k\), and prove \(k \le r+1\) (so the new bound strictly subsumes the previous \(O(n + r\log r)\) statement). We also bound the number of inserted diagonals by the number of split/merge vertices.
+  \item \textbf{Implementation and reproducibility.} We provide a complete C++ implementation and a reproducibility package (build scripts, benchmark harness, and sanity checks such as non-crossing diagonals and outputting exactly \(n-2\) triangles).
+  \item \textbf{Clear benchmark comparisons and speedups.} We compare against widely used practical baselines with public implementations and report mean \(\pm\) standard deviation timings. The updated results show clear wall-clock speedups (e.g., roughly \(20\times\) over Garey et al.\ on convex inputs at \(n=10{,}000\), and about \(2\times\) on low-\(k\) ``dent'' polygons; on random inputs our method is fastest across the reported sizes).
+\end{itemize}
+
+Thank you for your time and consideration.
+
+Sincerely,\\
+Pavel Shpagin\\
+Vasyl Tereschenko
+
+\end{document}
+

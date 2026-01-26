@@ -67,13 +67,19 @@ cd "${CGTA_DIR}"
 if [ "${SKIP_PDF}" != "1" ]; then
   pdflatex -interaction=nonstopmode -halt-on-error submission.tex
   pdflatex -interaction=nonstopmode -halt-on-error submission.tex
+  if [ -f cover_letter.tex ]; then
+    pdflatex -interaction=nonstopmode -halt-on-error cover_letter.tex
+    pdflatex -interaction=nonstopmode -halt-on-error cover_letter.tex
+  fi
 fi
 
 if [ "${KEEP_TEX_TEMP}" != "1" ]; then
   echo "Cleaning LaTeX temporary files..."
   rm -f submission.aux submission.log submission.out submission.spl submission.toc \
         submission.bbl submission.blg submission.fls submission.fdb_latexmk \
-        submission.lof submission.lot submission.synctex.gz 2>/dev/null || true
+        submission.lof submission.lot submission.synctex.gz \
+        cover_letter.aux cover_letter.log cover_letter.out cover_letter.toc \
+        cover_letter.fls cover_letter.fdb_latexmk cover_letter.synctex.gz 2>/dev/null || true
 fi
 
 echo "Done:"
@@ -83,5 +89,8 @@ echo "  - ${FIG_DIR}/triangulation_*.svg"
 echo "  - ${FIG_DIR}/triangulation_*.tri"
 if [ "${SKIP_PDF}" != "1" ]; then
   echo "  - ${CGTA_DIR}/submission.pdf"
+  if [ -f "${CGTA_DIR}/cover_letter.pdf" ]; then
+    echo "  - ${CGTA_DIR}/cover_letter.pdf"
+  fi
 fi
 
