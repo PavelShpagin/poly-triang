@@ -22,3 +22,6 @@
 	path = external/polytri
 	url = https://github.com/tcoppex/polytri
 
+[submodule "Practical-Triangulation"]
+	path = Practical-Triangulation
+	url = https://github.com/PavelShpagin/Practical-Triangulation.git
