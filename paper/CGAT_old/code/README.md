@@ -1,6 +1,6 @@
-# CGAT Submission Code Artifact
+# CGTA Submission Code Package
 
-This folder contains the **code artifact** accompanying the CGAT submission in `paper/CGAT/submission.tex`.
+This folder contains the **code package** accompanying the CGTA submission in `paper/CGAT/submission.tex`.
 
 ## Contents
 

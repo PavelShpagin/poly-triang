@@ -21,7 +21,7 @@ Even with hybrid fallback, competitive performance:
 - Random: Comparable or faster than baselines
 - The O(k log k) sweep provides significant speedup when k << n
 
-### Recommendations for CGAT
+### Recommendations for CGTA
 
 ## Current Findings
 

@@ -122,7 +122,7 @@ Total over all pieces is \(O(n)\).
 \end{itemize}
 
 \section{Brainstorm: can we eliminate the BST entirely?}
-The chain-sweep formulation from the CGAT paper uses a balanced BST to answer predecessor queries
+The chain-sweep formulation from the CGTA paper uses a balanced BST to answer predecessor queries
 (``which active chain is immediately left of the current event vertex?'').
 Here we brainstorm directions to remove that BST while keeping a \(k\log k\)-type bound.
 
@@ -333,8 +333,8 @@ Then:
   \item at a merge/end/regular vertex, do exactly the textbook helper updates and add a diagonal iff the relevant helper is a merge.
 \end{itemize}
 
-\paragraph{What changes from the CGAT chain-sweep.}
-In the CGAT paper, \(\textsc{LeftEdge}\) is implemented by a BST predecessor query on the sweep status order.
+\paragraph{What changes from the CGTA chain-sweep.}
+In the CGTA paper, \(\textsc{LeftEdge}\) is implemented by a BST predecessor query on the sweep status order.
 In the BST-free version, we want \(\textsc{LeftEdge}\) via \textsc{FindChordSupports} + pointer walks.
 Everything else (pending merges, slab entry, and the diagonal rules) stays identical.
 

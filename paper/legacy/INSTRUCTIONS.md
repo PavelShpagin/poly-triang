@@ -117,7 +117,7 @@ Based on the algorithm design, expect:
 
 ## Publication Target
 
-**Computational Geometry: Theory and Applications (CGAT)**
+**Computational Geometry: Theory and Applications (CGTA)**
 
 The paper presents:
 1. Novel O(n + r log r) algorithm - first practical sub-O(n log n) deterministic method

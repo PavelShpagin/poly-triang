@@ -61,7 +61,7 @@ python3 "${CGAT_DIR}/tools/benchmark_cgat.py" \
   --out-csv "${OUTDIR}/benchmark_results.csv" \
   --out-raw "${OUTDIR}/benchmark_results_raw.csv"
 
-echo "[4/5] Update CGAT LaTeX tables from raw benchmark CSV..."
+echo "[4/5] Update CGTA LaTeX tables from raw benchmark CSV..."
 python3 "${CGAT_DIR}/tools/generate_cgat_tables.py" \
   --input "${OUTDIR}/benchmark_results_raw.csv" \
   --outdir "${OUTDIR}"

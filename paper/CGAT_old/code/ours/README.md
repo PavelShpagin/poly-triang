@@ -1,4 +1,4 @@
-# Our implementation (CGAT artifact)
+# Our implementation (CGTA package)
 
 ## Build
 

@@ -1,4 +1,4 @@
-# RefleX triangulation (paper artifact)
+# RefleX triangulation (paper package)
 
 This folder contains a **self-contained** C++ reference implementation used in the paper.
 

@@ -2,7 +2,7 @@
 
 This directory is organized as:
 
-- `paper/CGAT/`: **current submission package** (LaTeX + compiled PDF + code artifact)
+- `paper/CGAT/`: **current CGTA submission package** (LaTeX + compiled PDF + code package)
 - `paper/legacy/`: archived drafts, experiments, and older benchmark scripts
 
 # O(n + k log k) Polygon Triangulation (specializes to O(n + r log r))

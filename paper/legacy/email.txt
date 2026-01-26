@@ -1,6 +1,6 @@
 Вітаю, пане Василю!
 
-Дякую за підтримку! Статтю "Practical polygonal triangulation in O(n + r log r) time" оновлено та готово до подачі в CGAT:
+Дякую за підтримку! Статтю "Practical polygonal triangulation in O(n + r log r) time" оновлено та готово до подачі в CGTA:
 
 1. Оновлено огляд літератури за Вашою порадою - тепер включає повний історичний контекст від ear-clipping до алгоритму Chazelle.
 
